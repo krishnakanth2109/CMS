@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RecruiterHub - Professional Recruiting Dashboard</title>
+    <meta
+      name="description"
+      content="Advanced recruiting dashboard with  management, performance analytics, and real-time reporting for recruiters and administrators"
+    />
+    <meta name="author" content="RecruiterHub" />
+    <meta
+      name="keywords"
+      content="recruiting dashboard,  management, recruiter analytics, hiring platform, recruitment software"
+    />
+
+    <meta property="og:title" content="RecruiterHub - Professional Recruiting Dashboard" />
+    <meta
+      property="og:description"
+      content="Advanced recruiting dashboard with  management, performance analytics, and real-time reporting"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="RecruiterHub - Professional Recruiting Dashboard" />
+    <meta
+      name="twitter:description"
+      content="Advanced recruiting dashboard with  management and analytics"
+    />
+    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+
+    <style>
+      /* === Splash Screen Styling === */
+      #splash-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: white;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        transition: opacity 0.8s ease;
+      }
+
+      .splash-logo {
+        width: 350px;
+        height: auto;
+        animation: pulse 1.5s infinite ease-in-out;
+      }
+
+      .splash-text {
+        margin-top: 20px;
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #ffffff;
+        letter-spacing: 1px;
+        opacity: 0;
+        animation: fadeIn 1.2s forwards ease-in-out 2s;
+      }
+
+      @keyframes pulse {
+        0% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.1);
+          opacity: 0.9;
+        }
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      @keyframes fadeIn {
+        to {
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- === Splash Screen === -->
+    <div id="splash-screen">
+      <img src="./public/Logo1.png" alt="Logo" class="splash-logo" />
+      <div class="splash-text">RecruiterHub</div>
+    </div>
+
+    <!-- === Main App Root === -->
+    <div id="root" style="display: none;"></div>
+
+    <!-- === Scripts === -->
+    <script type="module" src="/src/main.tsx"></script>
+
+    <script>
+      // Wait for React app to load, then hide splash
+      window.addEventListener("load", () => {
+        const splash = document.getElementById("splash-screen");
+        const root = document.getElementById("root");
+
+        splash.style.opacity = "0";
+        setTimeout(() => {
+          splash.style.display = "none";
+          root.style.display = "block";
+        }, 800); // matches fade transition
+      });
+    </script>
+  </body>
+</html>

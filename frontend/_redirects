@@ -1,0 +1,27 @@
+# Single Page Application (SPA) Fallback
+/*    /index.html    200
+
+# Force HTTPS (optional)
+# https://www.example.com  https://example.com 301!
+# http://www.example.com  https://example.com 301!
+# http://example.com  https://example.com 301!
+
+# Custom redirects (if needed)
+# /old-path /new-path 301
+
+# API proxy (if you have a backend)
+# /api/* https://api.yoursite.com/:splat 200
+
+# Security headers (for Netlify)
+/*.js
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  X-XSS-Protection: 1; mode=block
+
+/*.css
+  X-Content-Type-Options: nosniff
+
+/*
+  X-Frame-Options: DENY
+  X-XSS-Protection: 1; mode=block
+  Referrer-Policy: strict-origin-when-cross-origin
