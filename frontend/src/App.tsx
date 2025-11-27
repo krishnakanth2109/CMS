@@ -14,13 +14,14 @@ import { ClientsProvider } from "@/contexts/ClientsContext";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminRecruiters from "./pages/AdminRecruiters";
 import AdminCandidates from "./pages/AdminCandidates";
-import AddCandidate from "./pages/AddCandidate"; // <--- IMPORT ADDED
+import AddCandidate from "./pages/AddCandidate";
 import AdminReports from "./pages/AdminReports";
 import AdminSettings from "./pages/AdminSettings";
 import RecruiterSchedules from "./pages/RecruiterSchedules";
 import Requirements from "./pages/AdminRequirements";
 import AdminClientInfo from "./pages/AdminClientInfo";
 import AdminClientInvoice from "./pages/AdminClientInvoice";
+import AdminMessages from "./pages/AdminMessages"; // Assuming AdminMessages.tsx is named Messages.tsx or update path
 
 // ✅ Recruiter Pages
 import RecruiterDashboard from "./pages/RecruiterDashboard";
@@ -30,10 +31,10 @@ import RecruiterProfile from "./pages/RecruiterProfile";
 import RecruiterSettings from "./pages/RecruiterSettings";
 import Schedules from "./pages/Schedules";
 import Assignments from "./pages/RecruiterAssignments";
+import RecruiterMessages from "./pages/MessagesRecruiters"; // New File
 
 // ✅ Shared Pages
 import Login from "./pages/Login";
-import Messages from "./pages/Messages";
 import Notifications from "./pages/Notifications";
 import NotFound from "./pages/NotFound";
 
@@ -167,7 +168,7 @@ function AppRoutes() {
         path="/admin/messages"
         element={
           <ProtectedRoute role="admin">
-            <Messages />
+            <AdminMessages />
           </ProtectedRoute>
         }
       />
@@ -233,7 +234,7 @@ function AppRoutes() {
         path="/recruiter/messages"
         element={
           <ProtectedRoute role="recruiter">
-            <Messages />
+            <RecruiterMessages />
           </ProtectedRoute>
         }
       />

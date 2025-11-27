@@ -2,6 +2,8 @@ import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import mongoose from 'mongoose';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 
 // Routes
 import authRoutes from './routes/authRoutes.js';
@@ -10,38 +12,46 @@ import candidateRoutes from './routes/candidateRoutes.js';
 import clientRoutes from './routes/clientRoutes.js';
 import jobRoutes from './routes/jobRoutes.js';
 import interviewRoutes from './routes/interviewRoutes.js';
+import messageRoutes from './routes/messageRoutes.js';
 
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app); // 1. Create HTTP Server
 
-// CORS configuration - ADD localhost:8080
+// 2. Initialize Socket.IO on the HTTP Server
+const io = new Server(httpServer, {
+  cors: {
+    origin: [
+      'https://cms-vagarious.netlify.app',
+      'http://localhost:5173',
+      'http://localhost:5000',
+      'http://localhost:8080',
+      'http://127.0.0.1:8080'
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
+  }
+});
+
+// Middleware
 app.use(cors({
   origin: [
     'https://cms-vagarious.netlify.app',
     'http://localhost:5173',
     'http://localhost:5000',
-    'http://localhost:8080',  // ADD THIS LINE
-    'http://127.0.0.1:8080'   // ADD THIS LINE for IP access
+    'http://localhost:8080',
+    'http://127.0.0.1:8080'
   ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
-
-// Handle preflight requests globally
-app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin);
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.status(204).send();
-});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Database connection
+// Database Connection
 const connectDB = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URL);
@@ -51,167 +61,64 @@ const connectDB = async () => {
     process.exit(1);
   }
 };
-
 connectDB();
 
-// Routes - Mount with /api prefix (for organized API structure)
+// --- Socket.IO Logic ---
+io.on('connection', (socket) => {
+  console.log(`⚡ Socket Connected: ${socket.id}`);
+
+  socket.on('join_room', (userId) => {
+    if (userId) {
+      socket.join(userId);
+      console.log(`👤 User joined room: ${userId}`);
+    }
+  });
+
+  socket.on('send_message', (data) => {
+    if (data.to === 'all') {
+      socket.broadcast.emit('receive_message', data);
+    } else {
+      socket.to(data.to).emit('receive_message', data);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    // console.log('Socket Disconnected', socket.id);
+  });
+});
+
+// --- Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/recruiters', recruiterRoutes);
 app.use('/api/candidates', candidateRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/interviews', interviewRoutes);
+app.use('/api/messages', messageRoutes);
 
-// ALSO mount without /api prefix for compatibility with existing frontend
+// Fallback Routes
 app.use('/auth', authRoutes);
 app.use('/recruiters', recruiterRoutes);
 app.use('/candidates', candidateRoutes);
 app.use('/clients', clientRoutes);
 app.use('/jobs', jobRoutes);
 app.use('/interviews', interviewRoutes);
+app.use('/messages', messageRoutes);
 
-// Test routes to verify everything is working
-app.get('/api/test', (req, res) => {
-  res.json({ 
-    message: 'API test route with /api prefix',
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.get('/test', (req, res) => {
-  res.json({ 
-    message: 'API test route without /api prefix',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Test specific endpoints that are failing
-app.get('/recruiters', (req, res) => {
-  res.json({ 
-    message: 'Recruiters endpoint is working',
-    data: [] 
-  });
-});
-
-app.get('/candidates', (req, res) => {
-  res.json({ 
-    message: 'Candidates endpoint is working',
-    data: [] 
-  });
-});
-
-app.get('/jobs', (req, res) => {
-  res.json({ 
-    message: 'Jobs endpoint is working',
-    data: [] 
-  });
-});
-
-app.get('/clients', (req, res) => {
-  res.json({ 
-    message: 'Clients endpoint is working',
-    data: [] 
-  });
-});
-
-app.get('/interviews', (req, res) => {
-  res.json({ 
-    message: 'Interviews endpoint is working',
-    data: [] 
-  });
-});
-
-// Health check
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    message: 'Server is healthy',
-    timestamp: new Date().toISOString(),
-    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    cors: {
-      allowedOrigins: [
-        'https://cms-vagarious.netlify.app',
-        'http://localhost:5173',
-        'http://localhost:5000',
-        'http://localhost:8080',
-        'http://127.0.0.1:8080'
-      ]
-    }
-  });
-});
-
-// Base route
 app.get('/', (req, res) => {
-  res.json({
-    message: 'Recruitment API is running...',
-    environment: process.env.NODE_ENV || 'development',
-    endpoints: {
-      withApiPrefix: '/api/...',
-      withoutApiPrefix: '/...'
-    },
-    cors: {
-      allowedOrigins: [
-        'https://cms-vagarious.netlify.app',
-        'http://localhost:5173', 
-        'http://localhost:5000',
-        'http://localhost:8080',
-        'http://127.0.0.1:8080'
-      ]
-    }
-  });
+  res.json({ message: 'API is running with Socket.IO...' });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({
-    status: 'error',
-    message: `Route ${req.originalUrl} not found`,
-    availableRoutes: [
-      '/api/auth/login',
-      '/auth/login',
-      '/api/recruiters',
-      '/recruiters',
-      '/api/candidates', 
-      '/candidates',
-      '/api/jobs',
-      '/jobs',
-      '/api/clients',
-      '/clients',
-      '/api/interviews',
-      '/interviews',
-      '/api/test',
-      '/test',
-      '/health'
-    ]
-  });
-});
-
-// Global error handler
+// Error Handler
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
-
-  // CORS error
-  if (err.message === 'Not allowed by CORS') {
-    return res.status(403).json({
-      status: 'error',
-      message: 'CORS policy: Origin not allowed'
-    });
-  }
-
-  res.status(500).json({
-    status: 'error',
-    message: 'Internal Server Error'
-  });
+  console.error(err);
+  res.status(500).json({ error: 'Internal Server Error' });
 });
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log('CORS enabled for:');
-  console.log('- https://cms-vagarious.netlify.app');
-  console.log('- http://localhost:5173');
-  console.log('- http://localhost:5000');
-  console.log('- http://localhost:8080');
-  console.log('- http://127.0.0.1:8080');
+// 3. LISTEN ON HTTP SERVER (Not app.listen)
+httpServer.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔌 Socket.IO initialized`);
 });

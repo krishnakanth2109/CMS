@@ -10,7 +10,6 @@ import {
   Moon,
   Sun,
   MessageSquare,
-  Bell,
   Calendar,
   Menu,
   X,
@@ -19,6 +18,7 @@ import {
   Building,
   Receipt,
 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -54,7 +54,7 @@ export function DashboardSidebar() {
 
   const toggleSidebar = () => setCollapsed(!collapsed);
 
-  // ✅ Sidebar Items
+  // ✔ Admin Sidebar Items
   const adminItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
     { icon: Users, label: "Recruiters", path: "/admin/recruiters" },
@@ -63,18 +63,18 @@ export function DashboardSidebar() {
     { icon: Building, label: "Client Info", path: "/admin/clients" },
     { icon: Receipt, label: "Client Invoice", path: "/admin/invoices" },
     { icon: Calendar, label: "Recruiter Schedules", path: "/admin/schedules" },
-    { icon: MessageSquare, label: "Messages", path: "/admin/messages" },
+    { icon: MessageSquare, label: "Messages", path: "/admin/messages" }, // Admin Messages
     { icon: BarChart3, label: "Reports & Analytics", path: "/admin/reports" },
     { icon: Settings, label: "Settings", path: "/admin/settings" },
   ];
 
+  // ✔ Recruiter Sidebar Items
   const recruiterItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/recruiter" },
     { icon: Database, label: "My Candidates", path: "/recruiter/candidates" },
     { icon: Briefcase, label: "My Jobs", path: "/recruiter/assignments" },
-    { icon: Calendar, label: "My Interviews", path: "/recruiter/schedules" },
-    { icon: MessageSquare, label: "Messages", path: "/recruiter/messages" },
-
+    { icon: Calendar, label: "My Interviews", path: "/recruiter/schedules" }, // Corrected path
+    { icon: MessageSquare, label: "Messages", path: "/recruiter/messages" }, // Recruiter Messages
     { icon: FileText, label: "Reports", path: "/recruiter/reports" },
     { icon: UserCircle, label: "Profile", path: "/recruiter/profile" },
     { icon: Settings, label: "Settings", path: "/recruiter/settings" },
@@ -87,13 +87,14 @@ export function DashboardSidebar() {
       animate={{ width: collapsed ? "5rem" : "16rem" }}
       className="h-screen bg-sidebar border-r border-sidebar-border flex flex-col sticky top-0 transition-all duration-300 overflow-hidden"
     >
-      {/* === Header === */}
+      {/* Header */}
       <div className="p-4 border-b border-sidebar-border flex items-center justify-between">
         {!collapsed && (
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
               <Users className="h-6 w-6 text-primary-foreground" />
             </div>
+
             <div>
               <h2 className="text-lg font-bold text-sidebar-foreground">
                 RecruiterHub
@@ -136,7 +137,7 @@ export function DashboardSidebar() {
         </motion.button>
       </div>
 
-      {/* === Menu Items === */}
+      {/* Menu Items */}
       <div className="flex-1 p-3 space-y-2 overflow-y-auto relative">
         {items.map((item, index) => {
           const Icon = item.icon;
@@ -163,7 +164,6 @@ export function DashboardSidebar() {
                 {!collapsed && <span className="font-medium">{item.label}</span>}
               </Button>
 
-              {/* Tooltip on hover when collapsed */}
               {collapsed && (
                 <div className="absolute left-16 top-1/2 -translate-y-1/2 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1 z-50 shadow-md">
                   {item.label}
@@ -174,7 +174,7 @@ export function DashboardSidebar() {
         })}
       </div>
 
-      {/* === Footer === */}
+      {/* Footer */}
       <div className="p-4 border-t border-sidebar-border space-y-2">
         {/* Dark Mode Toggle */}
         <Button
@@ -192,9 +192,7 @@ export function DashboardSidebar() {
             <p className="text-sm font-medium text-sidebar-foreground">
               {user?.name}
             </p>
-            <p className="text-xs text-sidebar-foreground/60">
-              @{user?.username}
-            </p>
+            <p className="text-xs text-sidebar-foreground/60">@{user?.username}</p>
           </div>
         )}
 

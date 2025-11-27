@@ -607,7 +607,7 @@ function NewInterviewModal({ form, onChange, onCandidateSelect, onGenerateMeetin
                <Button variant="outline" onClick={onGenerateMeetingLink}>Generate</Button>
              </div>
           </div>
-          
+          <h2>this is</h2>
           <div><label className="text-sm font-medium">Notes</label><Textarea name="notes" value={form.notes} onChange={onChange}/></div>
         </div>
         <div className="p-4 border-t flex justify-end gap-3 bg-gray-50 rounded-b-xl">
