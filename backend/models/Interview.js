@@ -3,11 +3,11 @@ import mongoose from 'mongoose';
 const interviewSchema = mongoose.Schema({
   interviewId: { type: String, unique: true }, // e.g., INT-001
   candidateId: { type: mongoose.Schema.Types.ObjectId, ref: 'Candidate', required: true },
-  jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job' }, // Optional
   recruiterId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job' }, // Optional
   
   // Schedule Details
-  interviewDate: { type: Date, required: true },
+  interviewDate: { type: Date, required: true }, // Stores Date + Time
   duration: { type: Number, default: 60 }, // Minutes
   type: { 
     type: String, 
@@ -17,7 +17,7 @@ const interviewSchema = mongoose.Schema({
   location: { type: String, default: 'Remote' },
   meetingLink: { type: String },
   
-  // Status & Outcome
+  // Status & Meta
   status: {
     type: String,
     enum: ['Scheduled', 'Completed', 'Cancelled', 'No Show'],
@@ -28,18 +28,16 @@ const interviewSchema = mongoose.Schema({
     enum: ['L1 Interview', 'L2 Interview', 'Final Interview', 'Technical Interview', 'HR Interview'],
     default: 'L1 Interview'
   },
-  
-  // Feedback
+  priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
   notes: { type: String },
   feedback: { type: String },
-  rating: { type: Number, min: 1, max: 5 },
-  priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
+  rating: { type: Number },
 
 }, {
   timestamps: true,
 });
 
-// Generate ID
+// Middleware to generate custom Interview ID
 interviewSchema.pre('save', async function (next) {
   if (!this.isNew) return next();
   const count = await mongoose.model('Interview').countDocuments();

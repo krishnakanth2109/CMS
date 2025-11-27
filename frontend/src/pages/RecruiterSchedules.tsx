@@ -14,12 +14,22 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { Recruiter, Job, Candidate } from "@/types"; // Ensure Candidate is imported
+import { Recruiter, Job, Candidate } from "@/types"; 
 import { Client } from "@/contexts/ClientsContext";
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // --- Types ---
+
+// Handle MongoDB _id vs Frontend id
+interface CandidateWithId extends Candidate {
+  _id?: string;
+}
+
+interface RecruiterWithId extends Recruiter {
+  _id?: string;
+}
+
 interface Interview {
   id: string;
   interviewId: string;
@@ -46,7 +56,7 @@ interface Interview {
 }
 
 interface NewInterviewForm {
-  candidateId: string; // Added to track selected candidate
+  candidateId: string;
   candidateName: string;
   candidateEmail: string;
   candidatePhone: string;
@@ -123,12 +133,12 @@ const StatCard: React.FC<any> = ({ title, value, icon, gradient, onClick, descri
 );
 
 export default function RecruiterSchedules() {
-  const { recruiters } = useData();
-  
   // State
   const [interviews, setInterviews] = useState<Interview[]>([]);
-  const [candidates, setCandidates] = useState<Candidate[]>([]); // Added candidates state
+  const [candidates, setCandidates] = useState<CandidateWithId[]>([]);
+  const [recruiters, setRecruiters] = useState<RecruiterWithId[]>([]); // Fetched from API
   const [loading, setLoading] = useState(true);
+  
   const [selectedRecruiterId, setSelectedRecruiterId] = useState<string>("");
   const [viewMode, setViewMode] = useState<"list" | "calendar" | "grid">("grid");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -153,19 +163,19 @@ export default function RecruiterSchedules() {
     'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`
   });
 
-  // Fetch Data
+  // Fetch Data (Interviews, Candidates, Recruiters)
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch Interviews and Candidates in parallel
-      const [resInterviews, resCandidates] = await Promise.all([
+      const [resInterviews, resCandidates, resRecruiters] = await Promise.all([
         fetch(`${API_URL}/interviews`, { headers: getAuthHeader() }),
-        fetch(`${API_URL}/candidates`, { headers: getAuthHeader() })
+        fetch(`${API_URL}/candidates`, { headers: getAuthHeader() }),
+        fetch(`${API_URL}/recruiters`, { headers: getAuthHeader() })
       ]);
 
+      // Process Interviews
       if(resInterviews.ok) {
         const data = await resInterviews.json();
-        // Map API response to UI Model
         const mappedData = data.map((item: any, index: number) => ({
           id: item._id,
           interviewId: item.interviewId,
@@ -192,9 +202,26 @@ export default function RecruiterSchedules() {
         setInterviews(mappedData);
       }
 
+      // Process Candidates
       if(resCandidates.ok) {
         const candData = await resCandidates.json();
-        setCandidates(candData);
+        const mappedCandidates = candData.map((c: any) => ({
+          ...c,
+          _id: c._id, 
+          id: c._id
+        }));
+        setCandidates(mappedCandidates);
+      }
+
+      // Process Recruiters
+      if(resRecruiters.ok) {
+        const recData = await resRecruiters.json();
+        const mappedRecruiters = recData.map((r: any) => ({
+          ...r,
+          _id: r._id,
+          id: r._id
+        }));
+        setRecruiters(mappedRecruiters);
       }
 
     } catch (error) {
@@ -251,9 +278,10 @@ export default function RecruiterSchedules() {
     setNewInterviewForm(prev => ({ ...prev, [name]: value }));
   };
 
-  // Special handler for candidate dropdown
+  // Candidate Select Handler
   const handleCandidateSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedId = e.target.value;
+    // Handle both _id (MongoDB) and id (Frontend type)
     const candidate = candidates.find(c => c._id === selectedId || c.id === selectedId);
     
     if (candidate) {
@@ -264,11 +292,10 @@ export default function RecruiterSchedules() {
         candidateEmail: candidate.email,
         candidatePhone: candidate.contact || candidate.phone || "",
         position: candidate.position,
-        // Optionally set recruiter if candidate is assigned to one
-        recruiterId: candidate.recruiterId || prev.recruiterId
+        // Safely access recruiterId
+        recruiterId: typeof candidate.recruiterId === 'object' ? (candidate.recruiterId as any)._id : candidate.recruiterId || prev.recruiterId
       }));
     } else {
-        // Allow clearing
         setNewInterviewForm(prev => ({
             ...prev,
             candidateId: "",
@@ -287,7 +314,6 @@ export default function RecruiterSchedules() {
   };
 
   const handleSubmitNewInterview = async () => {
-    // Validate
     if(!newInterviewForm.candidateName || !newInterviewForm.recruiterId) {
       toast.error("Missing required fields");
       return;
@@ -304,7 +330,6 @@ export default function RecruiterSchedules() {
         toast.success("Interview scheduled successfully");
         setShowNewInterviewForm(false);
         fetchData();
-        // Reset form
         setNewInterviewForm({
           candidateId: "", candidateName: "", candidateEmail: "", candidatePhone: "", position: "", status: "L1 Interview",
           interviewDate: new Date().toISOString().split('T')[0], interviewTime: "10:00", interviewType: "Virtual",
@@ -371,7 +396,7 @@ export default function RecruiterSchedules() {
                   onChange={(e) => setSelectedRecruiterId(e.target.value)}
                 >
                   <option value="">All Recruiters</option>
-                  {recruiters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  {recruiters.map(r => <option key={r._id || r.id} value={r._id || r.id}>{r.name}</option>)}
                 </select>
                 <div className="flex bg-gray-100 dark:bg-gray-800 rounded p-1">
                   <button onClick={() => setViewMode("grid")} className={`p-2 rounded ${viewMode === 'grid' ? 'bg-white shadow' : ''}`}><Grid className="h-4 w-4"/></button>
@@ -419,7 +444,7 @@ export default function RecruiterSchedules() {
           onSubmit={handleSubmitNewInterview}
           onClose={() => setShowNewInterviewForm(false)}
           recruiters={recruiters}
-          candidates={candidates} // Pass candidates to modal
+          candidates={candidates}
         />
       )}
 
@@ -494,7 +519,18 @@ function InterviewListView({ interviews, onView }: { interviews: Interview[], on
   );
 }
 
-function NewInterviewModal({ form, onChange, onCandidateSelect, onGenerateMeetingLink, onSubmit, onClose, recruiters, candidates }: any) {
+interface NewInterviewModalProps {
+  form: NewInterviewForm;
+  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
+  onCandidateSelect: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  onGenerateMeetingLink: () => void;
+  onSubmit: () => void;
+  onClose: () => void;
+  recruiters: RecruiterWithId[];
+  candidates: CandidateWithId[];
+}
+
+function NewInterviewModal({ form, onChange, onCandidateSelect, onGenerateMeetingLink, onSubmit, onClose, recruiters, candidates }: NewInterviewModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
       <motion.div initial={{scale:0.9}} animate={{scale:1}} className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -550,7 +586,7 @@ function NewInterviewModal({ form, onChange, onCandidateSelect, onGenerateMeetin
               <label className="text-sm font-medium">Recruiter *</label>
               <select name="recruiterId" value={form.recruiterId} onChange={onChange} className="w-full p-2 border rounded bg-transparent">
                 <option value="">Select Recruiter</option>
-                {recruiters.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                {recruiters.map((r: any) => <option key={r._id || r.id} value={r._id || r.id}>{r.name}</option>)}
               </select>
             </div>
             <div>

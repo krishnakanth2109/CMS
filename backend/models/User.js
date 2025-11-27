@@ -2,7 +2,12 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 const userSchema = mongoose.Schema({
-  recruiterId: { type: String, unique: true, sparse: true }, 
+  recruiterId: { 
+    type: String, 
+    unique: true, 
+    sparse: true, // Allows multiple null values (essential for admins who don't have IDs)
+    required: false // MUST BE FALSE so admins can be saved without it
+  }, 
   name: { type: String, required: true },
   username: { type: String },
   email: { type: String, required: true, unique: true },
@@ -10,7 +15,6 @@ const userSchema = mongoose.Schema({
   phone: { type: String },
   role: { 
     type: String, 
-    // UPDATED: Only allow 'admin' and 'recruiter' (lowercase)
     enum: ['admin', 'recruiter'],
     default: 'recruiter' 
   },

@@ -30,7 +30,6 @@ export const createRecruiter = async (req, res) => {
       return res.status(400).json({ message: 'Recruiter ID already exists' });
     }
 
-    // Passwords are hashed automatically by the User model pre-save hook
     const user = await User.create({
       name,
       email,
@@ -67,6 +66,22 @@ export const updateRecruiter = async (req, res) => {
     const user = await User.findById(req.params.id);
 
     if (user) {
+      // FIX: Only check for ID existence if the ID is actually being CHANGED
+      if (req.body.recruiterId && req.body.recruiterId !== user.recruiterId) {
+        const idExists = await User.findOne({ recruiterId: req.body.recruiterId });
+        if (idExists) {
+          return res.status(400).json({ message: 'Recruiter ID already exists' });
+        }
+      }
+
+      // FIX: Only check for email existence if email is being CHANGED
+      if (req.body.email && req.body.email !== user.email) {
+        const emailExists = await User.findOne({ email: req.body.email });
+        if (emailExists) {
+          return res.status(400).json({ message: 'Email already exists' });
+        }
+      }
+
       user.name = req.body.name || user.name;
       user.email = req.body.email || user.email;
       user.phone = req.body.phone || user.phone;
@@ -85,7 +100,8 @@ export const updateRecruiter = async (req, res) => {
         _id: updatedUser._id,
         name: updatedUser.name,
         email: updatedUser.email,
-        role: updatedUser.role
+        role: updatedUser.role,
+        recruiterId: updatedUser.recruiterId
       });
     } else {
       res.status(404).json({ message: 'Recruiter not found' });

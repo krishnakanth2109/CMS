@@ -71,10 +71,10 @@ export function DashboardSidebar() {
   const recruiterItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/recruiter" },
     { icon: Database, label: "My Candidates", path: "/recruiter/candidates" },
-    { icon: Briefcase, label: "Assignments", path: "/recruiter/assignments" },
-    { icon: Calendar, label: "Schedules", path: "/recruiter/schedules" },
+    { icon: Briefcase, label: "My Jobs", path: "/recruiter/assignments" },
+    { icon: Calendar, label: "My Interviews", path: "/recruiter/schedules" },
     { icon: MessageSquare, label: "Messages", path: "/recruiter/messages" },
-    { icon: Bell, label: "Notifications", path: "/recruiter/notifications" },
+
     { icon: FileText, label: "Reports", path: "/recruiter/reports" },
     { icon: UserCircle, label: "Profile", path: "/recruiter/profile" },
     { icon: Settings, label: "Settings", path: "/recruiter/settings" },
