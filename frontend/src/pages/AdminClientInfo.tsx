@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-// FIXED: Imported useToast hook instead of direct toast function
 import { useToast } from "@/hooks/use-toast"; 
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -17,7 +16,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 // Client Type Definition
 interface Client {
   _id: string;
-  id: string; // mapped from _id
+  id: string; 
   clientId: string;
   companyName: string;
   contactPerson: string;
@@ -109,7 +108,6 @@ const ClientDetailCard: React.FC<{ client: Client; onClose: () => void }> = ({ c
   );
 };
 
-// Client Form Interface
 interface ClientForm {
   companyName: string;
   contactPerson: string;
@@ -130,25 +128,23 @@ interface ClientForm {
 }
 
 const AdminClientInfo: React.FC = () => {
-  // FIXED: Destructure toast from the useToast hook
   const { toast } = useToast();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Form state
   const [form, setForm] = useState<ClientForm>({
     companyName: "", contactPerson: "", email: "", phone: "", website: "", address: "",
     locationLink: "", industry: "", gstNumber: "", notes: "", clientId: "",
     percentage: "", candidatePeriod: "", replacementPeriod: "", terms: "", active: true,
   });
 
+  const [errors, setErrors] = useState<Record<string, string>>({}); // Error state
+
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
-  
-  // Filters
   const [industryFilter, setIndustryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
@@ -157,14 +153,12 @@ const AdminClientInfo: React.FC = () => {
     'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`
   });
 
-  // Fetch Clients
   const fetchClients = async () => {
     setLoading(true);
     try {
       const response = await fetch(`${API_URL}/clients`, { headers: getAuthHeader() });
       if (!response.ok) throw new Error('Failed to fetch clients');
       const data = await response.json();
-      // Map _id to id
       setClients(data.map((c: any) => ({ ...c, id: c._id })));
     } catch (error) {
       toast({ title: "Error", description: "Failed to load clients", variant: "destructive" });
@@ -177,8 +171,67 @@ const AdminClientInfo: React.FC = () => {
     fetchClients();
   }, []);
 
+  // VALIDATION LOGIC
+  const validateField = (name: string, value: string) => {
+    let error = "";
+    
+    if (name === 'companyName' || name === 'contactPerson') {
+      // Allow only letters and spaces
+      if (/[^a-zA-Z\s]/.test(value)) {
+        error = "Only alphabets allowed";
+      }
+    }
+    
+    if (name === 'phone') {
+      // Allow only numbers
+      if (/[^0-9]/.test(value)) {
+        error = "Only numbers allowed";
+      } else if (value.length > 10) {
+        error = "Max 10 digits allowed";
+      }
+    }
+
+    if (name === 'percentage' || name === 'candidatePeriod' || name === 'replacementPeriod') {
+      if (value && /[^0-9]/.test(value)) {
+        error = "Only numbers allowed";
+      }
+      // Check percentage range
+      if (name === 'percentage' && value && (parseInt(value) < 0 || parseInt(value) > 100)) {
+        error = "Must be 0-100";
+      }
+    }
+
+    if (name === 'email') {
+        // Basic email regex
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (value && !emailRegex.test(value)) {
+            error = "Invalid email format";
+        }
+    }
+
+    setErrors(prev => ({ ...prev, [name]: error }));
+    return error === "";
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
+    
+    // Input filtering for Company Name & Contact Person (prevent numbers being typed)
+    if ((name === 'companyName' || name === 'contactPerson') && /[^a-zA-Z\s]/.test(value)) {
+      return; // Ignore input if not alphabet/space
+    }
+
+    // Input filtering for Phone & Numeric Fields
+    if ((name === 'phone' || name === 'percentage' || name === 'candidatePeriod' || name === 'replacementPeriod') && /[^0-9]/.test(value)) {
+      return; // Ignore non-numeric input
+    }
+
+    if (name === 'phone' && value.length > 10) {
+      return; // Limit phone to 10
+    }
+
+    validateField(name, value); // Trigger validation message
+    
     setForm({ 
       ...form, 
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value 
@@ -186,9 +239,20 @@ const AdminClientInfo: React.FC = () => {
   };
 
   const handleSubmit = async () => {
+    // Final validation check
+    const nameValid = validateField('companyName', form.companyName);
+    const personValid = validateField('contactPerson', form.contactPerson);
+    const emailValid = validateField('email', form.email);
+    const phoneValid = validateField('phone', form.phone);
+
     if (!form.companyName || !form.contactPerson || !form.email) {
       toast({ title: "Validation Error", description: "Required fields missing", variant: "destructive" });
       return;
+    }
+
+    if (!nameValid || !personValid || !emailValid || !phoneValid || Object.values(errors).some(x => x !== "")) {
+        toast({ title: "Validation Error", description: "Please fix errors in the form", variant: "destructive" });
+        return;
     }
 
     try {
@@ -206,9 +270,9 @@ const AdminClientInfo: React.FC = () => {
       toast({ title: "Success", description: `Client ${editingClient ? 'Updated' : 'Added'}` });
       setShowForm(false);
       setEditingClient(null);
+      setErrors({});
       fetchClients();
       
-      // Reset Form
       setForm({
         companyName: "", contactPerson: "", email: "", phone: "", website: "", address: "",
         locationLink: "", industry: "", gstNumber: "", notes: "", clientId: "",
@@ -221,6 +285,7 @@ const AdminClientInfo: React.FC = () => {
 
   const handleEditClient = (client: Client) => {
     setEditingClient(client);
+    setErrors({});
     setForm({
       companyName: client.companyName,
       contactPerson: client.contactPerson,
@@ -282,7 +347,7 @@ const AdminClientInfo: React.FC = () => {
               <h1 className="text-3xl font-bold">Client Information</h1>
               <p className="text-gray-500">Manage client companies</p>
             </div>
-            <Button onClick={() => { setEditingClient(null); setShowForm(!showForm); }} className="bg-purple-600 hover:bg-purple-700">
+            <Button onClick={() => { setEditingClient(null); setShowForm(!showForm); setErrors({}); }} className="bg-purple-600 hover:bg-purple-700">
               <PlusIcon className="w-4 h-4 mr-2" /> {showForm ? "Cancel" : "Add Client"}
             </Button>
           </div>
@@ -316,18 +381,55 @@ const AdminClientInfo: React.FC = () => {
                   <CardHeader><CardTitle>{editingClient ? "Edit Client" : "Add Client"}</CardTitle></CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <Input name="companyName" placeholder="Company Name *" value={form.companyName} onChange={handleChange} />
-                      <Input name="contactPerson" placeholder="Contact Person *" value={form.contactPerson} onChange={handleChange} />
-                      <Input name="email" placeholder="Email *" value={form.email} onChange={handleChange} />
-                      <Input name="phone" placeholder="Phone" value={form.phone} onChange={handleChange} />
+                      {/* Company Name */}
+                      <div>
+                          <Input name="companyName" placeholder="Company Name *" value={form.companyName} onChange={handleChange} className={errors.companyName ? "border-red-500" : ""} />
+                          {errors.companyName && <p className="text-xs text-red-500 mt-1">{errors.companyName}</p>}
+                      </div>
+
+                      {/* Contact Person */}
+                      <div>
+                          <Input name="contactPerson" placeholder="Contact Person *" value={form.contactPerson} onChange={handleChange} className={errors.contactPerson ? "border-red-500" : ""} />
+                          {errors.contactPerson && <p className="text-xs text-red-500 mt-1">{errors.contactPerson}</p>}
+                      </div>
+
+                      {/* Email */}
+                      <div>
+                          <Input name="email" placeholder="Email *" value={form.email} onChange={handleChange} className={errors.email ? "border-red-500" : ""} />
+                          {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
+                      </div>
+
+                      {/* Phone */}
+                      <div>
+                          <Input name="phone" placeholder="Phone (10 digits)" value={form.phone} onChange={handleChange} maxLength={10} className={errors.phone ? "border-red-500" : ""} />
+                          {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
+                      </div>
+
                       <Input name="industry" placeholder="Industry" value={form.industry} onChange={handleChange} />
-                      <Input name="percentage" placeholder="Commission %" type="number" value={form.percentage} onChange={handleChange} />
-                      <Input name="candidatePeriod" placeholder="Period (Months)" type="number" value={form.candidatePeriod} onChange={handleChange} />
+                      
+                      {/* Commission */}
+                      <div>
+                          <Input name="percentage" placeholder="Commission %" type="text" value={form.percentage} onChange={handleChange} className={errors.percentage ? "border-red-500" : ""} />
+                          {errors.percentage && <p className="text-xs text-red-500 mt-1">{errors.percentage}</p>}
+                      </div>
+
+                      {/* Candidate Period */}
+                      <div>
+                          <Input name="candidatePeriod" placeholder="Period (Months)" type="text" value={form.candidatePeriod} onChange={handleChange} className={errors.candidatePeriod ? "border-red-500" : ""} />
+                          {errors.candidatePeriod && <p className="text-xs text-red-500 mt-1">{errors.candidatePeriod}</p>}
+                      </div>
+
+                      {/* Replacement Period */}
+                      <div>
+                          <Input name="replacementPeriod" placeholder="Replacement (Days)" type="text" value={form.replacementPeriod} onChange={handleChange} className={errors.replacementPeriod ? "border-red-500" : ""} />
+                          {errors.replacementPeriod && <p className="text-xs text-red-500 mt-1">{errors.replacementPeriod}</p>}
+                      </div>
+
                       <Input name="gstNumber" placeholder="GST Number" value={form.gstNumber} onChange={handleChange} />
                       <Input name="clientId" placeholder="Custom ID (Optional)" value={form.clientId} onChange={handleChange} />
                     </div>
                     <div className="mt-4 flex justify-end">
-                      <Button onClick={handleSubmit}>{editingClient ? "Update" : "Save"}</Button>
+                      <Button onClick={handleSubmit} disabled={Object.values(errors).some(e => e !== "")}>{editingClient ? "Update" : "Save"}</Button>
                     </div>
                   </CardContent>
                 </Card>

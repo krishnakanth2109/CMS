@@ -13,6 +13,8 @@
 # /api/* https://api.yoursite.com/:splat 200
 
 # Security headers (for Netlify)
+/*   /index.html   200
+
 /*.js
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

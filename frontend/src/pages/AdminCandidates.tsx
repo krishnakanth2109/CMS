@@ -232,6 +232,7 @@ export default function AdminCandidates() {
   };
 
   const handleExport = () => {
+    // Basic CSV implementation
     const headers = ["ID", "Name", "Email", "Phone", "Position", "Client", "Status", "Recruiter"];
     const rows = filteredCandidates.map(c => [
       c.candidateId, c.name, c.email, c.contact, c.position, c.client, c.status, c.recruiterName
@@ -252,11 +253,17 @@ export default function AdminCandidates() {
                           c.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           c.candidateId?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
-    // @ts-ignore 
+    // @ts-ignore - Handle recruiterId object or string mismatch
     const matchesRecruiter = recruiterFilter === 'all' || c.recruiterId === recruiterFilter || c.recruiterId?._id === recruiterFilter;
 
     return matchesSearch && matchesStatus && matchesRecruiter;
   });
+
+  const getStatusVariant = (status: string) => {
+    if(['Joined', 'Offer'].includes(status)) return 'success'; // You might need to add success variant to badge or use className
+    if(['Rejected'].includes(status)) return 'destructive';
+    return 'default';
+  };
 
   const getInitials = (n: string) => n.split(' ').map(i => i[0]).join('').toUpperCase().substring(0,2);
 
@@ -330,6 +337,8 @@ export default function AdminCandidates() {
                <Table>
                  <TableHeader>
                    <TableRow>
+                     {/* Added Sl.No Header */}
+                     <TableHead className="w-12">S.No</TableHead> 
                      <TableHead>ID</TableHead>
                      <TableHead>Candidate</TableHead>
                      <TableHead>Position</TableHead>
@@ -340,8 +349,10 @@ export default function AdminCandidates() {
                    </TableRow>
                  </TableHeader>
                  <TableBody>
-                   {filteredCandidates.map(c => (
+                   {filteredCandidates.map((c, index) => (
                      <TableRow key={c.id}>
+                       {/* Added Sl.No Cell */}
+                       <TableCell className="text-muted-foreground">{index + 1}</TableCell>
                        <TableCell>
                          <div className="flex items-center gap-2">
                            <code className="bg-gray-100 px-1 rounded text-xs">{c.candidateId}</code>
@@ -374,16 +385,17 @@ export default function AdminCandidates() {
                        </TableCell>
                      </TableRow>
                    ))}
-                   {filteredCandidates.length === 0 && <TableRow><TableCell colSpan={7} className="text-center py-8">No candidates found.</TableCell></TableRow>}
+                   {filteredCandidates.length === 0 && <TableRow><TableCell colSpan={8} className="text-center py-8">No candidates found.</TableCell></TableRow>}
                  </TableBody>
                </Table>
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredCandidates.map(c => (
+              {filteredCandidates.map((c, index) => (
                 <Card key={c.id} className="p-6 hover:shadow-lg transition-all">
                    <div className="flex justify-between items-start mb-4">
                       <div className="flex gap-3">
+                        <span className="text-sm text-gray-500 font-mono">#{index + 1}</span>
                         <Avatar><AvatarFallback>{getInitials(c.name)}</AvatarFallback></Avatar>
                         <div>
                           <div className="font-bold">{c.name}</div>

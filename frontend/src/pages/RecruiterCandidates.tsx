@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useMemo } from 'react';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,26 +13,27 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
-  Plus, Search, Edit, Filter, Download, User, Phone, Mail,
-  Building, Briefcase, DollarSign, Clock, AlertTriangle, AlertCircle, Copy, Check, Calendar,
-  Eye, EyeOff, CheckCircle, XCircle, Loader2, Trash2, List, LayoutGrid
+  Plus, Search, Edit, Filter, Download, Phone, Mail,
+  Building, Briefcase, Loader2, Trash2, List, LayoutGrid,
+  Calendar, MapPin
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Candidate, Job } from '@/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-// Extend types if necessary for backend compatibility
+// Extend types for backend compatibility
 interface BackendCandidate extends Candidate {
   _id: string;
   dateAdded?: string;
+  // Ensure we handle populated fields if backend sends them
+  assignedJobId?: string | { _id: string; position: string; clientName: string }; 
 }
 
 interface BackendJob extends Job {
@@ -40,7 +42,7 @@ interface BackendJob extends Job {
 }
 
 export default function RecruiterCandidates() {
-  const { user, token } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   
   // Data State
@@ -51,10 +53,8 @@ export default function RecruiterCandidates() {
   // UI & Filter State
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [tatFilter, setTatFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null);
-  const [copiedCandidateId, setCopiedCandidateId] = useState<string | null>(null);
   
   // Modal State
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -117,7 +117,7 @@ export default function RecruiterCandidates() {
         c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
         c.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.candidateId?.toLowerCase().includes(searchTerm.toLowerCase());
+        (c.candidateId && c.candidateId.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const statusMatch = statusFilter === 'all' || c.status === statusFilter;
 
@@ -150,14 +150,30 @@ export default function RecruiterCandidates() {
 
   const getInitials = (n: string) => n.split(' ').map(i => i[0]).join('').toUpperCase().substring(0,2);
 
-  // --- 3. Handlers ---
+  // Helper to find assigned job title even if ID is just a string
+  const getAssignedJobTitle = (candidateJobId: string | any) => {
+    if (!candidateJobId) return 'N/A';
+    // If backend already populated it
+    if (typeof candidateJobId === 'object' && candidateJobId.position) return `${candidateJobId.position} (${candidateJobId.clientName})`;
+    
+    // Otherwise look it up in jobs state
+    const job = jobs.find(j => (j._id || j.id) === candidateJobId);
+    return job ? `${job.position} - ${job.clientName}` : 'N/A';
+  };
 
+  // --- 3. Handlers ---
   const handleInputChange = (key: string, value: any) => {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
   const openEditDialog = (c: BackendCandidate) => {
     setSelectedCandidateId(c._id || c.id);
+    
+    // Handle nested or string assignedJobId for the form
+    const jobIdValue = typeof c.assignedJobId === 'object' && c.assignedJobId !== null 
+      ? c.assignedJobId._id 
+      : (c.assignedJobId || '');
+
     setFormData({
       name: c.name,
       position: c.position,
@@ -172,7 +188,7 @@ export default function RecruiterCandidates() {
       ctc: c.ctc || '',
       ectc: c.ectc || '',
       noticePeriod: c.noticePeriod || '',
-      assignedJobId: c.assignedJobId || '',
+      assignedJobId: jobIdValue,
       dateAdded: c.dateAdded ? new Date(c.dateAdded).toISOString().split('T')[0] : '',
       active: c.active !== false
     });
@@ -239,8 +255,6 @@ export default function RecruiterCandidates() {
 
   const copyId = (id: string) => {
     navigator.clipboard.writeText(id);
-    setCopiedCandidateId(id);
-    setTimeout(() => setCopiedCandidateId(null), 2000);
     toast({ title: "Copied", description: "ID copied to clipboard" });
   };
 
@@ -251,7 +265,7 @@ export default function RecruiterCandidates() {
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
       <DashboardSidebar />
       <main className="flex-1 p-6 overflow-y-auto">
-         <div className="max-w-7xl mx-auto space-y-6">
+         <div className="max-w-[1600px] mx-auto space-y-6">
             
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -325,53 +339,105 @@ export default function RecruiterCandidates() {
                         <table className="w-full text-sm text-left">
                             <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-800">
                                 <tr>
-                                    <th className="p-4">ID</th>
-                                    <th className="p-4">Candidate</th>
-                                    <th className="p-4">Position / Client</th>
+                                    <th className="p-4 w-[50px]">S.No</th>
+                                    <th className="p-4">Candidate Details</th>
+                                    <th className="p-4">Job / Client</th>
+                                    <th className="p-4">Experience & NP</th>
+                                    <th className="p-4">Compensation</th>
                                     <th className="p-4">Status</th>
-                                    <th className="p-4">Experience</th>
-                                    <th className="p-4">Contact</th>
                                     <th className="p-4 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {getFilteredCandidates.map(c => (
+                                {getFilteredCandidates.map((c, index) => (
                                     <tr key={c._id || c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                        <td className="p-4">
-                                            <code className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-xs cursor-pointer hover:bg-slate-200" onClick={() => copyId(c.candidateId || c._id)}>
-                                                {c.candidateId || c._id.substring(0,6)}
-                                            </code>
-                                        </td>
+                                        
+                                        {/* 1. Serial Number */}
+                                        <td className="p-4 text-slate-500">{index + 1}</td>
+
+                                        {/* 2. Candidate Basic Info */}
                                         <td className="p-4">
                                             <div className="flex items-center gap-3">
-                                                <Avatar className="h-9 w-9 border-2 border-white shadow-sm"><AvatarFallback className="bg-blue-100 text-blue-700">{getInitials(c.name)}</AvatarFallback></Avatar>
+                                                <Avatar className="h-9 w-9 border-2 border-white shadow-sm">
+                                                    <AvatarFallback className="bg-blue-100 text-blue-700">{getInitials(c.name)}</AvatarFallback>
+                                                </Avatar>
                                                 <div>
                                                     <div className="font-semibold text-slate-900 dark:text-white">{c.name}</div>
-                                                    <div className="text-xs text-slate-500">{c.email}</div>
+                                                    <div className="text-xs text-slate-500 mb-1">{c.email}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <code 
+                                                            className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px] cursor-pointer hover:bg-slate-200 text-slate-500" 
+                                                            onClick={() => copyId(c.candidateId || c._id)}
+                                                            title="Click to copy ID"
+                                                        >
+                                                            {c.candidateId || c._id.substring(0,6)}
+                                                        </code>
+                                                        <span className="flex items-center text-xs text-slate-500">
+                                                            <Phone className="h-3 w-3 mr-1" /> {c.contact}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="p-4">
-                                            <div className="font-medium">{c.position}</div>
-                                            <div className="text-xs text-slate-500 flex items-center gap-1"><Building className="h-3 w-3"/> {c.client}</div>
-                                        </td>
-                                        <td className="p-4"><Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge></td>
-                                        <td className="p-4">
-                                            <div className="text-xs text-slate-500 space-y-1">
-                                                <div>Total: <span className="font-medium">{c.totalExperience || 0}y</span></div>
-                                                <div>Rel: <span className="font-medium">{c.relevantExperience || 0}y</span></div>
+
+                                        {/* 3. Role & Assigned Job */}
+                                        <td className="p-4 align-top">
+                                            <div className="font-medium text-slate-800 dark:text-slate-200">{c.position}</div>
+                                            <div className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                                                <Building className="h-3 w-3"/> {c.client}
+                                            </div>
+                                            <div className="text-[11px] text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded mt-2 inline-block">
+                                                <span className="font-semibold">For: </span>
+                                                {getAssignedJobTitle(c.assignedJobId)}
                                             </div>
                                         </td>
-                                        <td className="p-4">
-                                            <div className="text-xs text-slate-500 space-y-1">
-                                                <div className="flex items-center gap-1"><Phone className="h-3 w-3"/> {c.contact}</div>
-                                                <div className="flex items-center gap-1"><DollarSign className="h-3 w-3"/> {c.ctc || 'N/A'} LPA</div>
+
+                                        {/* 4. Experience & Notice Period */}
+                                        <td className="p-4 align-top">
+                                            <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1.5">
+                                                <div className="flex justify-between w-full max-w-[120px]">
+                                                    <span>Total Exp:</span>
+                                                    <span className="font-medium">{c.totalExperience || 0}y</span>
+                                                </div>
+                                                <div className="flex justify-between w-full max-w-[120px]">
+                                                    <span>Rel Exp:</span>
+                                                    <span className="font-medium">{c.relevantExperience || 0}y</span>
+                                                </div>
+                                                <div className="flex justify-between w-full max-w-[120px] text-orange-600 dark:text-orange-400">
+                                                    <span>Notice:</span>
+                                                    <span className="font-medium">{c.noticePeriod || 'N/A'}</span>
+                                                </div>
                                             </div>
                                         </td>
+
+                                        {/* 5. Compensation (No Dollar Sign) */}
+                                        <td className="p-4 align-top">
+                                            <div className="space-y-1.5">
+                                                <div className="flex flex-col">
+                                                    <span className="text-[10px] text-slate-400 uppercase tracking-wide">Current</span>
+                                                    <span className="font-medium text-sm">{c.ctc || 'N/A'} LPA</span>
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="text-[10px] text-slate-400 uppercase tracking-wide">Expected</span>
+                                                    <span className="font-medium text-sm text-green-600">{c.ectc || 'N/A'} LPA</span>
+                                                </div>
+                                            </div>
+                                        </td>
+
+                                        {/* 6. Status */}
+                                        <td className="p-4">
+                                            <Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge>
+                                        </td>
+
+                                        {/* 7. Actions */}
                                         <td className="p-4 text-right">
                                             <div className="flex justify-end gap-2">
-                                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => openEditDialog(c)}><Edit className="h-4 w-4 text-blue-600"/></Button>
-                                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleDelete(c._id)}><Trash2 className="h-4 w-4 text-red-600"/></Button>
+                                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 hover:bg-blue-50" onClick={() => openEditDialog(c)}>
+                                                    <Edit className="h-4 w-4 text-blue-600"/>
+                                                </Button>
+                                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 hover:bg-red-50" onClick={() => handleDelete(c._id)}>
+                                                    <Trash2 className="h-4 w-4 text-red-600"/>
+                                                </Button>
                                             </div>
                                         </td>
                                     </tr>
@@ -401,6 +467,7 @@ export default function RecruiterCandidates() {
                                     <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-2 rounded"><Building className="h-4 w-4 text-slate-400"/> {c.client}</div>
                                     <div className="flex items-center gap-2"><Mail className="h-4 w-4 text-slate-400"/> <span className="truncate">{c.email}</span></div>
                                     <div className="flex items-center gap-2"><Phone className="h-4 w-4 text-slate-400"/> {c.contact}</div>
+                                    <div className="flex items-center gap-2"><Briefcase className="h-4 w-4 text-slate-400"/> For: {getAssignedJobTitle(c.assignedJobId)}</div>
                                 </div>
 
                                 <div className="grid grid-cols-3 gap-2 text-xs font-medium text-slate-500 pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -468,7 +535,7 @@ export default function RecruiterCandidates() {
                 <div className="space-y-2"><Label>Total Exp (Years)</Label><Input value={formData.totalExperience} onChange={e => handleInputChange('totalExperience', e.target.value)} /></div>
                 <div className="space-y-2"><Label>Relevant Exp</Label><Input value={formData.relevantExperience} onChange={e => handleInputChange('relevantExperience', e.target.value)} /></div>
                 <div className="space-y-2"><Label>Current CTC (LPA)</Label><Input value={formData.ctc} onChange={e => handleInputChange('ctc', e.target.value)} /></div>
-                <div className="space-y-2"><Label>Expected CTC</Label><Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)} /></div>
+                <div className="space-y-2"><Label>Expected CTC (LPA)</Label><Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)} /></div>
                 <div className="space-y-2"><Label>Notice Period</Label><Input value={formData.noticePeriod} onChange={e => handleInputChange('noticePeriod', e.target.value)} /></div>
                 
                 <div className="col-span-1 md:col-span-2 space-y-2">

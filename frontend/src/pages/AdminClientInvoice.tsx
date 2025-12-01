@@ -1,32 +1,51 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
-import { useClients, Client } from "@/contexts/ClientsContext";
-import { useData } from "@/contexts/DataContext";
-import { Candidate } from "@/types";
+import React, { useState, useMemo, useEffect } from "react";
 import { DashboardSidebar } from "@/components/DashboardSidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
+import { useToast } from "@/hooks/use-toast"; 
+import { motion } from "framer-motion";
+import html2pdf from 'html2pdf.js';
+
 import {
   BuildingOfficeIcon,
-  UserIcon,
   DocumentTextIcon,
   PlusIcon,
   TrashIcon,
-  ArrowDownTrayIcon,
   MagnifyingGlassIcon,
   CalculatorIcon,
-  CheckCircleIcon,
-  XMarkIcon,
-  EyeIcon,
-  PencilSquareIcon,
   PrinterIcon,
+  PencilSquareIcon,
+  BanknotesIcon,
+  ArrowDownTrayIcon,
 } from "@heroicons/react/24/outline";
 
-// 🔹 Invoice Item Interface
+// API URL
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+// --- Types ---
+
+interface Client {
+  _id: string;
+  id: string;
+  companyName: string;
+  address?: string;
+  gstNumber?: string;
+}
+
+interface Candidate {
+  _id: string;
+  id: string;
+  name: string;
+  position: string;
+  status: string;
+  email?: string;
+  ctc?: string; // Used as salary
+  joiningDate?: string; 
+  clientId?: string; 
+}
+
 interface InvoiceItem {
   id: string;
   candidateName: string;
@@ -37,277 +56,366 @@ interface InvoiceItem {
   payment: number;
 }
 
-// 🔹 Invoice Form Interface
+interface BankDetails {
+  accountName: string;
+  accountNumber: string;
+  bankName: string;
+  branch: string;
+  pan: string;
+  gst: string;
+}
+
 interface InvoiceForm {
   invoiceNumber: string;
   invoiceDate: string;
-  dueDate: string;
   clientId: string;
   items: InvoiceItem[];
   subtotal: number;
   total: number;
-  status: "draft" | "sent" | "paid" | "overdue";
+  bankDetails: BankDetails;
+  authorizedSignatory: string;
 }
 
-// 🔹 Printable Invoice Component (Matches Screenshot Exactly - Plain Format)
+// --- Helper Functions ---
+
+const getOrdinalDate = (dateString: string) => {
+  const date = new Date(dateString);
+  const day = date.getDate();
+  const month = date.toLocaleString('default', { month: 'long' });
+  const year = date.getFullYear();
+
+  const getOrdinal = (n: number) => {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  };
+
+  return `${getOrdinal(day)} ${month} ${year}`;
+};
+
+const numberToWords = (num: number): string => {
+  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  const convertGroup = (n: number): string => {
+    if (n === 0) return '';
+    if (n < 20) return a[n] + ' ';
+    if (n < 100) return b[Math.floor(n / 10)] + ' ' + a[n % 10] + ' ';
+    return a[Math.floor(n / 100)] + ' Hundred ' + convertGroup(n % 100);
+  };
+
+  if (num === 0) return 'Zero';
+  
+  let output = '';
+  const crore = Math.floor(num / 10000000);
+  num %= 10000000;
+  const lakh = Math.floor(num / 100000);
+  num %= 100000;
+  const thousand = Math.floor(num / 1000);
+  num %= 1000;
+  
+  if (crore > 0) output += convertGroup(crore) + 'Crore ';
+  if (lakh > 0) output += convertGroup(lakh) + 'Lakh ';
+  if (thousand > 0) output += convertGroup(thousand) + 'Thousand ';
+  if (num > 0) output += convertGroup(num);
+
+  return output.trim() + ' Rupees only';
+};
+
+// --- Printable Component ---
+
 const PrintableInvoice: React.FC<{
   form: InvoiceForm;
   selectedClient: Client | undefined;
 }> = ({ form, selectedClient }) => {
-  const numberToWords = (num: number): string => {
-    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 
-      'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-    
-    if (num === 0) return 'Zero';
-    
-    let words = '';
-    
-    if (num >= 100000) {
-      const lakhs = Math.floor(num / 100000);
-      words += numberToWords(lakhs) + ' Lakh ';
-      num %= 100000;
-    }
-    
-    if (num >= 1000) {
-      const thousands = Math.floor(num / 1000);
-      words += numberToWords(thousands) + ' Thousand ';
-      num %= 1000;
-    }
-    
-    if (num >= 100) {
-      const hundreds = Math.floor(num / 100);
-      words += ones[hundreds] + ' Hundred ';
-      num %= 100;
-    }
-    
-    if (num > 0) {
-      if (num < 20) {
-        words += ones[num];
-      } else {
-        words += tens[Math.floor(num / 10)];
-        if (num % 10 > 0) {
-          words += ' ' + ones[num % 10];
-        }
-      }
-    }
-    
-    return words.trim() + ' Rupees only';
-  };
-
   return (
-    <div className="bg-white text-black p-8 print:p-0 font-sans text-sm" style={{ 
-      width: '210mm',
-      minHeight: '297mm',
-      margin: '0 auto',
-      padding: '15mm'
-    }}>
-      {/* Company Header - Simple Text Only */}
-      <div className="text-center mb-6">
-        <h1 className="text-xl font-bold uppercase">VAGARIOUS SOLUTIONS PVT LTD</h1>
-      </div>
-
-      {/* To Section - Client Details */}
-      <div className="mb-6">
-        <div className="text-sm">
-          <strong>To,</strong><br />
-          {selectedClient && (
-            <>
-              <strong>{selectedClient.companyName}</strong><br />
-              {selectedClient.address || "1st Floor, 3-5-677/1,"}<br />
-              {selectedClient.address ? "" : "Opp RBI Quarter, Near Srinagar Colony,"}<br />
-              {selectedClient.address ? "" : "Yelia Reddy Guds, Hyderabad, 500073"}<br />
-              GST : {selectedClient.gstNumber || "36A4CCT3963L2T"}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Date and Invoice Header */}
-      <div className="mb-6">
-        <div className="flex justify-between items-start">
-          <div>
-            <div className="text-sm">
-              {new Date(form.invoiceDate).toLocaleDateString('en-GB', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric'
-              })}
+    <div className="bg-white text-black font-sans leading-normal relative overflow-hidden" 
+      id="invoice-content"
+      style={{ 
+        width: '210mm',
+        minHeight: '297mm',
+        margin: '0 auto',
+        padding: '0', 
+        position: 'relative'
+      }}>
+      
+      {/* 1. Header Design */}
+      <div className="flex justify-between items-start pt-12 px-12 pb-4">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-12 bg-gradient-to-br from-blue-700 to-blue-900 clip-path-logo transform skew-x-[-10deg]"></div>
+            <div className="flex flex-col">
+              <h1 className="text-3xl font-bold text-[#0088CC] tracking-wide uppercase leading-none">VAGARIOUS</h1>
+              <span className="text-sm font-bold text-[#0088CC] tracking-[0.2em] uppercase">SOLUTIONS PVT LTD</span>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-sm font-bold">TAX INVOICE</div>
-          </div>
         </div>
-        
-        <div className="mt-2">
-          <div className="text-sm">
-            <strong>SUB:</strong> Final invoice
-          </div>
-        </div>
+        <div 
+          className="absolute top-0 right-0 w-[200px] h-[100px] bg-[#00AEEF]"
+          style={{ clipPath: 'polygon(20% 0%, 100% 0, 100% 100%, 0% 100%)' }}
+        ></div>
       </div>
 
-      {/* Tax Invoice Table */}
-      <div className="mb-6">
-        <table className="w-full border-collapse border border-gray-800 text-sm">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="border border-gray-800 p-2 text-left font-bold">S.no</th>
-              <th className="border border-gray-800 p-2 text-left font-bold">Candidate Name</th>
-              <th className="border border-gray-800 p-2 text-left font-bold">Role</th>
-              <th className="border border-gray-800 p-2 text-left font-bold">Joining Date</th>
-              <th className="border border-gray-800 p-2 text-left font-bold">Actual Salary</th>
-              <th className="border border-gray-800 p-2 text-left font-bold">Percentage</th>
-              <th className="border border-gray-800 p-2 text-left font-bold">Payment</th>
-            </tr>
-          </thead>
-          <tbody>
-            {form.items.map((item, index) => (
-              <tr key={item.id}>
-                <td className="border border-gray-800 p-2">{index + 1}</td>
-                <td className="border border-gray-800 p-2">{item.candidateName}</td>
-                <td className="border border-gray-800 p-2">{item.role}</td>
-                <td className="border border-gray-800 p-2">{item.joiningDate}</td>
-                <td className="border border-gray-800 p-2 text-right">{item.actualSalary.toLocaleString('en-IN')}</td>
-                <td className="border border-gray-800 p-2 text-right">{item.percentage}%</td>
-                <td className="border border-gray-800 p-2 text-right">{item.payment.toLocaleString('en-IN')}</td>
+      <div className="px-12 mt-8">
+        {/* 2. To Address Section */}
+        <div className="mb-8">
+          <p className="font-bold mb-2 text-sm">To,</p>
+          {selectedClient ? (
+            <div className="text-sm font-bold leading-relaxed">
+              <p>{selectedClient.companyName}</p>
+              <p className="font-medium text-gray-800 w-2/3">
+                {selectedClient.address || "Address not available"}
+              </p>
+              <p className="font-bold">GST : {selectedClient.gstNumber || "N/A"}</p>
+            </div>
+          ) : (
+            <p className="text-red-500 text-sm font-bold">[PLEASE SELECT A CLIENT]</p>
+          )}
+        </div>
+
+        {/* 3. Date */}
+        <div className="flex justify-end mb-6">
+          <p className="font-bold text-sm">{getOrdinalDate(form.invoiceDate)}</p>
+        </div>
+
+        {/* 4. Subject */}
+        <div className="mb-4">
+          <p className="font-bold text-sm">SUB: Final Invoice</p>
+        </div>
+
+        {/* 5. Tax Invoice Title */}
+        <div className="text-center mb-1">
+          <h2 className="font-bold text-sm uppercase">TAX INVOICE</h2>
+        </div>
+
+        {/* 6. Main Table */}
+        <div className="relative mb-6">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-5 z-0">
+             <h1 className="text-6xl font-black uppercase text-gray-500 text-center leading-tight">VAGARIOUS<br/>SOLUTIONS PVT LTD</h1>
+          </div>
+
+          <table className="w-full border-collapse border border-black text-[11px] relative z-10">
+            <thead>
+              <tr className="bg-white">
+                <th className="border border-black p-2 text-center font-bold w-[5%]">S.no</th>
+                <th className="border border-black p-2 text-center font-bold w-[20%]">Candidate<br/>Name</th>
+                <th className="border border-black p-2 text-center font-bold w-[15%]">Role</th>
+                <th className="border border-black p-2 text-center font-bold w-[15%]">Joining Date</th>
+                <th className="border border-black p-2 text-center font-bold w-[15%]">Actual<br/>Salary</th>
+                <th className="border border-black p-2 text-center font-bold w-[10%]">Percentage</th>
+                <th className="border border-black p-2 text-center font-bold w-[15%]">Payment</th>
               </tr>
-            ))}
-            {/* Total Row */}
-            <tr className="bg-gray-50 font-bold">
-              <td className="border border-gray-800 p-2 text-center" colSpan={6}>Total</td>
-              <td className="border border-gray-800 p-2 text-right">{form.total.toLocaleString('en-IN')}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* Amount in Words */}
-      <div className="mb-6 text-sm">
-        ({numberToWords(form.total)})
-      </div>
-
-      {/* Account Details */}
-      <div className="mb-6 text-sm">
-        <div><strong>Account Details: -</strong></div>
-        <div>Account No.: - 000805023576</div>
-        <div>Name: Vagarious Solutions Pvt Ltd.</div>
-        <div>Bank: ICICI Bank</div>
-        <div>Branch: Begumpet Branch</div>
-        <div>PAN No.: AMICV0178E</div>
-        <div>GST : 36AAHCV0176E12E</div>
-      </div>
-
-      {/* Authorization */}
-      <div className="mt-12">
-        <div className="text-sm mb-2">
-          <strong>Authorized Signature</strong>
+            </thead>
+            <tbody>
+              {form.items.map((item, index) => (
+                <tr key={item.id} className="text-center h-10">
+                  <td className="border border-black p-2">{index + 1}</td>
+                  <td className="border border-black p-2 font-medium">{item.candidateName}</td>
+                  <td className="border border-black p-2">{item.role}</td>
+                  <td className="border border-black p-2">{item.joiningDate}</td>
+                  <td className="border border-black p-2 text-right px-4">{item.actualSalary.toLocaleString('en-IN')}</td>
+                  <td className="border border-black p-2">{item.percentage}%</td>
+                  <td className="border border-black p-2 text-right px-4">{item.payment.toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
+                </tr>
+              ))}
+              
+              <tr className="font-bold h-10">
+                <td className="border border-black p-2 text-center" colSpan={6}>Total</td>
+                <td className="border border-black p-2 text-right px-4">{form.total.toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div className="mt-12">
-          <div className="text-sm">
-            <strong>Nevya S</strong><br />
-            Vagarious Solutions Pvt Ltd
+
+        {/* 7. Amount in Words */}
+        <div className="mb-6 text-sm">
+          ( {numberToWords(Math.round(form.total))} / ...)
+        </div>
+
+        {/* 8. Bank Account Details */}
+        <div className="mb-10 text-xs font-bold leading-loose">
+          <p className="mb-1">Account Details: -</p>
+          <div className="ml-0">
+            <p>Account No.: - {form.bankDetails.accountNumber}</p>
+            <p>Name : {form.bankDetails.accountName}</p>
+            <p>Bank : {form.bankDetails.bankName}</p>
+            <p>Branch : {form.bankDetails.branch}</p>
+            <p>PAN No. : {form.bankDetails.pan}</p>
+            <p>GST : {form.bankDetails.gst}</p>
           </div>
         </div>
+
+        {/* 9. Signature Section */}
+        <div className="mt-8 text-xs font-bold">
+          <p className="mb-8">Authorized Signature</p>
+          <div className="w-24 h-12 mb-2 relative">
+             <div className="absolute inset-0 border-b-2 border-blue-900 transform -rotate-12 opacity-50"></div>
+          </div>
+          <p>{form.authorizedSignatory}</p>
+          <p>Vagarious Solutions Pvt Ltd</p>
+        </div>
       </div>
 
-      {/* Simple Footer */}
-      <div className="text-center mt-8 pt-4 border-t border-gray-300 text-xs text-gray-600">
-        <div>2nd Floor, Spline Arcade, Ayyappa Society Main Rd, Madhapur, Hyderabad, TS 500081</div>
-        <div>Ph: +91 8919801095 | Email: ops@vagarioussolutions.com | www.vagarioussolutions.com</div>
+      {/* 10. Footer Section */}
+      <div className="absolute bottom-0 w-full bg-[#0088CC] text-white py-4 px-12 text-center text-[10px]">
+        <p>2nd Floor, Spline Arcade, Ayyappa Society Main Rd, Madhapur, Hyderabad, TS 500081</p>
+        <p>Ph: +91 8919801095 | Email: ops@vagarioussolutions.com | www.vagarioussolutions.com</p>
       </div>
     </div>
   );
 };
 
-const ClientInvoice: React.FC = () => {
-  const { clients } = useClients();
-  const { candidates } = useData();
+// --- Main Admin Component ---
 
-  // Invoice form state
+const AdminClientInvoice: React.FC = () => {
+  const { toast } = useToast();
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // Fetched Data State
+  const [clients, setClients] = useState<Client[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+
+  // Form State
   const [form, setForm] = useState<InvoiceForm>({
-    invoiceNumber: "",
+    invoiceNumber: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
     invoiceDate: new Date().toISOString().split('T')[0],
-    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     clientId: "",
     items: [],
     subtotal: 0,
     total: 0,
-    status: "draft"
+    authorizedSignatory: "Navya S",
+    bankDetails: {
+      accountNumber: "000805022576",
+      accountName: "Vagarious Solutions Pvt Ltd.",
+      bankName: "ICICI Bank",
+      branch: "Begumpet Branch",
+      pan: "AAHCV0176E",
+      gst: "36AAHCV0176E1ZE"
+    }
   });
 
-  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [showPreview, setShowPreview] = useState(false);
-  const [selectedCandidates, setSelectedCandidates] = useState<Candidate[]>([]);
 
-  // Filter candidates based on selected client
-  const filteredCandidates = useMemo(() => {
-    if (!form.clientId) return [];
-    return candidates.filter(candidate => 
-      candidate.recruiterId && candidate.status === 'Joined' &&
-      (candidate.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-       candidate.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-       candidate.position?.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-  }, [form.clientId, candidates, searchTerm]);
+  const getAuthHeader = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`
+  });
+
+  // 1. Fetch Data from Backend
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [resClients, resCandidates] = await Promise.all([
+          fetch(`${API_URL}/clients`, { headers: getAuthHeader() }),
+          fetch(`${API_URL}/candidates`, { headers: getAuthHeader() })
+        ]);
+
+        if (resClients.ok) {
+          const clientData = await resClients.json();
+          // Map _id to id for consistent usage
+          setClients(clientData.map((c: any) => ({ ...c, id: c._id })));
+        }
+
+        if (resCandidates.ok) {
+          const candData = await resCandidates.json();
+          setCandidates(candData.map((c: any) => ({ ...c, id: c._id })));
+        }
+      } catch (error) {
+        console.error(error);
+        toast({ title: "Error", description: "Failed to load data", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   // Get selected client details
   const selectedClient = useMemo(() => {
     return clients.find(client => client.id === form.clientId);
   }, [form.clientId, clients]);
 
-  // Calculate invoice totals
-  useEffect(() => {
-    const subtotal = form.items.reduce((sum, item) => sum + item.payment, 0);
-    const total = subtotal;
+  // Filter candidates (Only Joined ones, and belonging to selected client if chosen)
+  const filteredCandidates = useMemo(() => {
+    return candidates.filter(candidate => {
+      // Basic filters
+      const isJoined = candidate.status === 'Joined';
+      const matchesSearch = 
+        candidate.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        candidate.email?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      // If client selected, filter by client (assuming candidate has clientId field or client Name matches)
+      // Note: Adjust 'client' property matching based on your schema
+      // For this example, we rely on manual selection if linking isn't strict in DB
+      return isJoined && matchesSearch;
+    });
+  }, [candidates, searchTerm]);
 
-    setForm(prev => ({
-      ...prev,
-      subtotal,
-      total
-    }));
+  // Recalculate totals
+  useEffect(() => {
+    const total = form.items.reduce((sum, item) => sum + item.payment, 0);
+    setForm(prev => ({ ...prev, subtotal: total, total }));
   }, [form.items]);
 
-  // Handle form input changes
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-  };
-
-  // Handle client selection
+  // Handlers
   const handleClientChange = (clientId: string) => {
-    setForm(prev => ({ 
-      ...prev, 
-      clientId
-    }));
-    setSearchTerm("");
-    setSelectedCandidates([]);
-    setForm(prev => ({ ...prev, items: [] }));
+    setForm(prev => ({ ...prev, clientId }));
   };
 
-  // Handle item changes
-  const handleItemChange = (id: string, field: string, value: string | number) => {
+  const handleAddCandidate = (candidate: Candidate) => {
+    if (form.items.some(item => item.candidateName === candidate.name)) {
+      toast({ title: "Already added", description: "Candidate already in invoice", variant: "destructive" });
+      return;
+    }
+
+    // Parse Salary (CTC) - Assuming format like "12 LPA" or just number
+    const ctcString = candidate.ctc ? candidate.ctc.replace(/[^0-9.]/g, '') : '0';
+    const ctc = parseFloat(ctcString) * 100000 || 0; // Assuming CTC is in Lakhs, convert to actual value if needed. Or just use as is.
+    // Adjusted logic: If backend stores as '12', treat as 12,00,000 for invoice? 
+    // Usually invoice needs full yearly or monthly salary. 
+    // Let's assume the input 'actualSalary' field on invoice is manually editable anyway.
+    
+    const defaultPercentage = 8.33; 
+    
+    const newItem: InvoiceItem = {
+      id: Date.now().toString(),
+      candidateName: candidate.name,
+      role: candidate.position || "N/A",
+      joiningDate: candidate.joiningDate ? new Date(candidate.joiningDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      actualSalary: ctc, // Default value
+      percentage: defaultPercentage,
+      payment: Math.round((ctc * defaultPercentage) / 100)
+    };
+
+    setForm(prev => ({ ...prev, items: [...prev.items, newItem] }));
+    toast({ title: "Success", description: "Candidate added to invoice" });
+  };
+
+  const removeItem = (id: string) => {
+    setForm(prev => ({ ...prev, items: prev.items.filter(item => item.id !== id) }));
+  };
+
+  const updateItem = (id: string, field: keyof InvoiceItem, value: any) => {
     setForm(prev => ({
       ...prev,
       items: prev.items.map(item => {
         if (item.id === id) {
-          const updatedItem = { ...item, [field]: value };
-          
-          // Recalculate payment if actual salary or percentage changes
+          const updated = { ...item, [field]: value };
           if (field === 'actualSalary' || field === 'percentage') {
-            updatedItem.payment = (Number(updatedItem.actualSalary) * Number(updatedItem.percentage)) / 100;
+            updated.payment = Math.round((Number(updated.actualSalary) * Number(updated.percentage)) / 100);
           }
-          
-          return updatedItem;
+          return updated;
         }
         return item;
       })
     }));
   };
 
-  // Add new candidate row
-  const addCandidateRow = () => {
+  // Manual Add Item Handler
+  const handleManualAdd = () => {
     const newItem: InvoiceItem = {
       id: Date.now().toString(),
       candidateName: "",
@@ -317,683 +425,305 @@ const ClientInvoice: React.FC = () => {
       percentage: 8.33,
       payment: 0
     };
+    setForm(prev => ({ ...prev, items: [...prev.items, newItem] }));
+  };
+
+  const handlePrint = () => {
+    const printContent = document.getElementById('printable-area');
+    if (!printContent) return;
     
-    setForm(prev => ({
-      ...prev,
-      items: [...prev.items, newItem]
-    }));
+    const originalContent = document.body.innerHTML;
+    document.body.innerHTML = printContent.innerHTML;
+    window.print();
+    document.body.innerHTML = originalContent;
+    window.location.reload(); 
   };
 
-  // Remove candidate row
-  const removeCandidateRow = (id: string) => {
-    setForm(prev => ({
-      ...prev,
-      items: prev.items.filter(item => item.id !== id)
-    }));
-  };
-
-  // Add candidate from dropdown
-  const handleAddCandidate = (candidate: Candidate) => {
-    // Check if candidate is already added
-    if (form.items.some(item => item.candidateName === candidate.name)) {
-      toast.error("Candidate already added to invoice");
+  const handleDownload = async () => {
+    const element = document.getElementById('invoice-content');
+    if (!element) {
+      toast({ title: "Error", description: "Invoice content not found", variant: "destructive" });
       return;
     }
 
-    const newItem: InvoiceItem = {
-      id: Date.now().toString(),
-      candidateName: candidate.name,
-      role: candidate.position,
-      joiningDate: new Date().toISOString().split('T')[0],
-      actualSalary: parseFloat(candidate.ctc || '0') || 0,
-      percentage: 8.33,
-      payment: (parseFloat(candidate.ctc || '0') * 8.33) / 100
+    setIsDownloading(true);
+    const opt = {
+      margin: 0,
+      filename: `Invoice_${form.invoiceNumber}.pdf`,
+      image: { type: 'jpeg', quality: 1 },
+      html2canvas: { scale: 2, useCORS: true, logging: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
-    setForm(prev => ({
-      ...prev,
-      items: [...prev.items, newItem]
-    }));
-
-    setSelectedCandidates(prev => [...prev, candidate]);
-    toast.success(`Added ${candidate.name} to invoice`);
-  };
-
-  // Remove candidate from selection
-  const handleRemoveSelectedCandidate = (candidateName: string) => {
-    setSelectedCandidates(prev => prev.filter(c => c.name !== candidateName));
-    setForm(prev => ({
-      ...prev,
-      items: prev.items.filter(item => item.candidateName !== candidateName)
-    }));
-  };
-
-  // Generate invoice number
-  const generateInvoiceNumber = () => {
-    const prefix = "INV";
-    const randomNum = Math.floor(10000 + Math.random() * 90000);
-    return `${prefix}-${randomNum}`;
-  };
-
-  // Handle form submission
-  const handleSubmit = () => {
-    if (!form.clientId || !form.invoiceNumber) {
-      toast.error("Please fill in all required fields: Client and Invoice Number");
-      return;
-    }
-
-    if (form.items.length === 0) {
-      toast.error("Please add at least one candidate to the invoice");
-      return;
-    }
-
-    if (form.items.some(item => !item.candidateName || !item.role)) {
-      toast.error("Please ensure all candidate rows have names and roles");
-      return;
-    }
-
-    toast.success("Invoice created successfully!");
-    setShowPreview(true);
-  };
-
-  // Download invoice as PDF
-  const downloadInvoice = () => {
-    const element = document.getElementById('printable-invoice');
-    if (element) {
-      const htmlContent = element.innerHTML;
-      const printWindow = window.open('', '_blank');
-      
-      if (printWindow) {
-        printWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>Invoice_${form.invoiceNumber}</title>
-              <style>
-                body { 
-                  margin: 0; 
-                  padding: 15mm; 
-                  font-family: Arial, sans-serif; 
-                  color: #000;
-                  background: white;
-                  font-size: 14px;
-                  width: 210mm;
-                  min-height: 297mm;
-                }
-                @media print {
-                  body { margin: 0; padding: 15mm; }
-                  .no-print { display: none !important; }
-                }
-                table { 
-                  width: 100%; 
-                  border-collapse: collapse; 
-                  margin: 10px 0;
-                }
-                th, td { 
-                  border: 1px solid #000; 
-                  padding: 8px; 
-                  text-align: left;
-                }
-                th { 
-                  background-color: #f0f0f0; 
-                  font-weight: bold;
-                }
-                .text-center { text-align: center; }
-                .text-right { text-align: right; }
-                .text-left { text-align: left; }
-                .bold { font-weight: bold; }
-              </style>
-            </head>
-            <body>
-              ${htmlContent}
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
-        
-        // Trigger print dialog
-        setTimeout(() => {
-          printWindow.print();
-        }, 500);
-      }
+    try {
+      await html2pdf().set(opt).from(element).save();
+      toast({ title: "Success", description: "Invoice downloaded" });
+    } catch (error) {
+      console.error("PDF Download Error:", error);
+      toast({ title: "Error", description: "Failed to download PDF", variant: "destructive" });
+    } finally {
+      setIsDownloading(false);
     }
   };
-
-  // Direct print function
-  const printInvoice = () => {
-    const printContent = document.getElementById('printable-invoice');
-    if (printContent) {
-      const originalContents = document.body.innerHTML;
-      const printContents = printContent.innerHTML;
-      
-      document.body.innerHTML = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Invoice_${form.invoiceNumber}</title>
-            <style>
-              body { 
-                margin: 0; 
-                padding: 15mm; 
-                font-family: Arial, sans-serif; 
-                color: #000;
-                background: white;
-                font-size: 14px;
-                width: 210mm;
-                min-height: 297mm;
-              }
-              table { 
-                width: 100%; 
-                border-collapse: collapse; 
-                margin: 10px 0;
-              }
-              th, td { 
-                border: 1px solid #000; 
-                padding: 8px; 
-                text-align: left;
-              }
-              th { 
-                background-color: #f0f0f0; 
-                font-weight: bold;
-              }
-              .text-right { text-align: right; }
-            </style>
-          </head>
-          <body>
-            ${printContents}
-          </body>
-        </html>
-      `;
-      
-      window.print();
-      document.body.innerHTML = originalContents;
-      window.location.reload();
-    }
-  };
-
-  // Reset form
-  const resetForm = () => {
-    setForm({
-      invoiceNumber: generateInvoiceNumber(),
-      invoiceDate: new Date().toISOString().split('T')[0],
-      dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      clientId: "",
-      items: [],
-      subtotal: 0,
-      total: 0,
-      status: "draft"
-    });
-    setSearchTerm("");
-    setSelectedCandidates([]);
-    setShowPreview(false);
-  };
-
-  // Initialize invoice number on component mount
-  useEffect(() => {
-    setForm(prev => ({ ...prev, invoiceNumber: generateInvoiceNumber() }));
-  }, []);
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-indigo-50/30 dark:from-gray-900 dark:via-blue-950/20 dark:to-indigo-950/20 text-gray-900 dark:text-gray-100">
-      {/* Sidebar */}
+    <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900 font-sans">
       <DashboardSidebar />
-
-      {/* Main Content */}
-      <div className="flex-1 p-6 lg:p-8 overflow-y-auto">
-        <div className="max-w-7xl mx-auto space-y-8">
-          {/* Page Header */}
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-            className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4"
-          >
+      
+      <div className="flex-1 p-8 overflow-y-auto h-screen">
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }} 
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-7xl mx-auto space-y-8"
+        >
+          {/* Header */}
+          <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
             <div>
-              <h1 className="text-3xl lg:text-4xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-green-600 via-blue-600 to-purple-600 dark:from-green-400 dark:via-blue-400 dark:to-purple-400">
-                Professional Invoice Generator
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                Invoice Generator
               </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">
-                Create clean invoices matching your screenshot format
-              </p>
+              <p className="text-gray-500 mt-1">Create professional invoices for clients</p>
             </div>
-            
             <div className="flex gap-3">
-              <Button
-                onClick={resetForm}
-                variant="outline"
-                className="gap-2 border-gray-200 dark:border-gray-600"
-              >
-                <DocumentTextIcon className="w-4 h-4" />
-                New Invoice
+              <Button variant="outline" onClick={() => setShowPreview(!showPreview)}>
+                {showPreview ? <PencilSquareIcon className="w-4 h-4 mr-2"/> : <DocumentTextIcon className="w-4 h-4 mr-2"/>}
+                {showPreview ? "Edit Details" : "Preview Invoice"}
               </Button>
-              <Button
-                onClick={() => setShowPreview(!showPreview)}
-                variant="outline"
-                className="gap-2 border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
-              >
-                <EyeIcon className="w-4 h-4" />
-                {showPreview ? "Edit Invoice" : "Preview Invoice"}
-              </Button>
+              
+              {showPreview && (
+                <>
+                  <Button onClick={handlePrint} variant="secondary">
+                    <PrinterIcon className="w-4 h-4 mr-2" />
+                    Print
+                  </Button>
+                  <Button onClick={handleDownload} className="bg-blue-600 hover:bg-blue-700" disabled={isDownloading}>
+                    <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
+                    {isDownloading ? "Downloading..." : "Download PDF"}
+                  </Button>
+                </>
+              )}
             </div>
-          </motion.div>
+          </div>
 
-          {/* Invoice Form and Preview */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-            {/* Invoice Form */}
-            {!showPreview ? (
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5 }}
-                className="space-y-6"
-              >
-                {/* Client Selection */}
-                <Card className="rounded-2xl bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg">
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-2">
-                      <BuildingOfficeIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                      <CardTitle className="text-xl font-semibold">
-                        Client Selection
-                      </CardTitle>
-                    </div>
+          {!showPreview ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              
+              {/* Left Column: Form Controls */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* 1. Client Selection */}
+                <Card className="border-0 shadow-md ring-1 ring-gray-100 dark:ring-gray-700">
+                  <CardHeader className="bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <BuildingOfficeIcon className="w-5 h-5 text-blue-500" />
+                      Client Details
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Select Client *
-                      </label>
-                      <select
-                        value={form.clientId}
-                        onChange={(e) => handleClientChange(e.target.value)}
-                        className="w-full rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">Choose a client...</option>
-                        {clients.map(client => (
-                          <option key={client.id} value={client.id}>
-                            {client.companyName} - {client.contactPerson}
-                          </option>
-                        ))}
-                      </select>
-                      
-                      {selectedClient && (
-                        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <h4 className="font-semibold text-gray-900 dark:text-white">{selectedClient.companyName}</h4>
-                              <p className="text-sm text-gray-600 dark:text-gray-400">{selectedClient.contactPerson}</p>
-                              <div className="flex gap-2 mt-2">
-                                <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                                  📧 {selectedClient.email}
-                                </Badge>
-                                {selectedClient.gstNumber && (
-                                  <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
-                                    GST: {selectedClient.gstNumber}
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                  <CardContent className="p-6 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2 md:col-span-1">
+                        <label className="text-sm font-medium text-gray-700 mb-1 block">Select Client</label>
+                        <select 
+                          className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                          value={form.clientId}
+                          onChange={(e) => handleClientChange(e.target.value)}
+                          disabled={loading}
+                        >
+                          <option value="">-- Choose Client --</option>
+                          {clients && clients.length > 0 ? (
+                            clients.map(c => (
+                              <option 
+                                key={c.id} 
+                                value={c.id}
+                              >
+                                {c.companyName}
+                              </option>
+                            ))
+                          ) : (
+                            <option disabled>Loading clients or No clients found...</option>
+                          )}
+                        </select>
+                      </div>
+                      <div className="col-span-2 md:col-span-1">
+                        <label className="text-sm font-medium text-gray-700 mb-1 block">Invoice Date</label>
+                        <Input 
+                          type="date" 
+                          value={form.invoiceDate}
+                          onChange={(e) => setForm({...form, invoiceDate: e.target.value})}
+                        />
+                      </div>
                     </div>
-
-                    {/* Candidate Selection */}
-                    {form.clientId && (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                            Select Candidates
-                          </label>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {filteredCandidates.length} candidates found
-                          </span>
-                        </div>
-                        
-                        <div className="relative">
-                          <MagnifyingGlassIcon className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                          <Input
-                            placeholder="Search candidates to add to invoice..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10 bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600"
-                          />
-                        </div>
-
-                        <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg">
-                          {filteredCandidates.map(candidate => (
-                            <div
-                              key={candidate.id}
-                              className="p-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer flex justify-between items-center"
-                              onClick={() => handleAddCandidate(candidate)}
-                            >
-                              <div>
-                                <p className="font-medium">{candidate.name}</p>
-                                <p className="text-sm text-gray-600">{candidate.position}</p>
-                              </div>
-                              <Badge className="bg-green-100 text-green-700">
-                                {candidate.ctc ? `₹${candidate.ctc}` : 'No CTC'}
-                              </Badge>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Selected Candidates */}
-                        {selectedCandidates.length > 0 && (
-                          <div className="mt-4">
-                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-                              Selected Candidates ({selectedCandidates.length})
-                            </label>
-                            <div className="space-y-2">
-                              {selectedCandidates.map(candidate => (
-                                <div key={candidate.id} className="flex justify-between items-center p-2 bg-blue-50 rounded-lg">
-                                  <div>
-                                    <span className="font-medium">{candidate.name}</span>
-                                    <span className="text-sm text-gray-600 ml-2">- {candidate.position}</span>
-                                  </div>
-                                  <Button
-                                    onClick={() => handleRemoveSelectedCandidate(candidate.name)}
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-red-600 hover:bg-red-100"
-                                  >
-                                    <TrashIcon className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                    
+                    {selectedClient && (
+                      <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 text-sm">
+                        <p className="font-bold text-blue-800 dark:text-blue-300">{selectedClient.companyName}</p>
+                        <p className="text-gray-600 dark:text-gray-400 mt-1">{selectedClient.address || "No address on file"}</p>
+                        <p className="text-gray-600 dark:text-gray-400 mt-1">GST: {selectedClient.gstNumber || "N/A"}</p>
                       </div>
                     )}
                   </CardContent>
                 </Card>
 
-                {/* Invoice Details */}
-                <Card className="rounded-2xl bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg">
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-2">
-                      <DocumentTextIcon className="w-6 h-6 text-green-600 dark:text-green-400" />
-                      <CardTitle className="text-xl font-semibold">
-                        Invoice & Candidate Details
-                      </CardTitle>
+                {/* 2. Candidate Items */}
+                <Card className="border-0 shadow-md ring-1 ring-gray-100 dark:ring-gray-700">
+                  <CardHeader className="bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700 flex flex-row justify-between items-center">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <CalculatorIcon className="w-5 h-5 text-green-500" />
+                      Invoice Items
+                    </CardTitle>
+                    <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={handleManualAdd}>
+                           <PlusIcon className="w-4 h-4 mr-1" /> Manual Add
+                        </Button>
+                        <Badge variant="secondary">{form.items.length} Items</Badge>
                     </div>
                   </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Invoice Number *
-                        </label>
-                        <Input
-                          name="invoiceNumber"
-                          value={form.invoiceNumber}
-                          onChange={handleChange}
-                          className="bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 font-mono"
-                        />
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Invoice Date *
-                        </label>
-                        <Input
-                          name="invoiceDate"
-                          type="date"
-                          value={form.invoiceDate}
-                          onChange={handleChange}
-                          className="bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600"
-                        />
-                      </div>
+                  <CardContent className="p-6 space-y-6">
+                    {/* Candidate Search (From Backend) */}
+                    <div className="relative">
+                      <MagnifyingGlassIcon className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                      <Input 
+                        placeholder="Search for joined candidates..." 
+                        className="pl-10"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                      {searchTerm && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                          {filteredCandidates.length === 0 ? (
+                            <div className="p-3 text-sm text-gray-500">No joined candidates found matching "{searchTerm}"</div>
+                          ) : (
+                            filteredCandidates.map(cand => (
+                              <div 
+                                key={cand.id}
+                                className="p-3 hover:bg-gray-50 cursor-pointer flex justify-between items-center border-b last:border-0"
+                                onClick={() => {
+                                  handleAddCandidate(cand);
+                                  setSearchTerm("");
+                                }}
+                              >
+                                <div>
+                                  <p className="font-medium text-sm">{cand.name}</p>
+                                  <p className="text-xs text-gray-500">{cand.position}</p>
+                                </div>
+                                <PlusIcon className="w-4 h-4 text-blue-500" />
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Candidate Items */}
+                    {/* Items List */}
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Candidate Details ({form.items.length} candidates)
-                        </label>
-                        <div className="flex gap-2">
-                          <Button
-                            onClick={addCandidateRow}
-                            variant="outline"
-                            size="sm"
-                            className="gap-2"
-                          >
-                            <PlusIcon className="w-4 h-4" />
-                            Add Manual
-                          </Button>
-                        </div>
-                      </div>
-
                       {form.items.length === 0 ? (
-                        <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg">
-                          <DocumentTextIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                          <p className="text-gray-500">No candidates added yet</p>
-                          <p className="text-sm text-gray-400 mt-1">Select candidates from the dropdown above or add manually</p>
+                        <div className="text-center py-10 text-gray-400 border-2 border-dashed rounded-xl">
+                          <DocumentTextIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                          <p>No candidates added to invoice yet.</p>
                         </div>
                       ) : (
-                        <div className="space-y-3">
-                          {form.items.map((item, index) => (
-                            <div key={item.id} className="border border-gray-200 rounded-lg p-4 bg-white dark:bg-gray-700">
-                              <div className="flex justify-between items-center mb-3">
-                                <h4 className="font-semibold">Candidate {index + 1}</h4>
-                                <Button
-                                  onClick={() => removeCandidateRow(item.id)}
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
-                                >
-                                  <TrashIcon className="w-4 h-4" />
-                                </Button>
+                        form.items.map((item) => (
+                          <motion.div 
+                            key={item.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow relative group"
+                          >
+                            <button 
+                              onClick={() => removeItem(item.id)}
+                              className="absolute top-4 right-4 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <TrashIcon className="w-5 h-5" />
+                            </button>
+
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                              <div className="md:col-span-3">
+                                <label className="text-xs text-gray-500 block mb-1">Candidate Name</label>
+                                <Input value={item.candidateName} onChange={(e) => updateItem(item.id, 'candidateName', e.target.value)} />
                               </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                <div className="space-y-2">
-                                  <label className="text-xs font-medium text-gray-600">Candidate Name</label>
-                                  <Input
-                                    placeholder="Name"
-                                    value={item.candidateName}
-                                    onChange={(e) => handleItemChange(item.id, 'candidateName', e.target.value)}
-                                    className="bg-white dark:bg-gray-600 border-gray-200 dark:border-gray-500 text-sm"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-xs font-medium text-gray-600">Role</label>
-                                  <Input
-                                    placeholder="Role"
-                                    value={item.role}
-                                    onChange={(e) => handleItemChange(item.id, 'role', e.target.value)}
-                                    className="bg-white dark:bg-gray-600 border-gray-200 dark:border-gray-500 text-sm"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-xs font-medium text-gray-600">Joining Date</label>
-                                  <Input
-                                    type="date"
-                                    value={item.joiningDate}
-                                    onChange={(e) => handleItemChange(item.id, 'joiningDate', e.target.value)}
-                                    className="bg-white dark:bg-gray-600 border-gray-200 dark:border-gray-500 text-sm"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-xs font-medium text-gray-600">Actual Salary (₹)</label>
-                                  <Input
-                                    type="number"
-                                    placeholder="Salary"
-                                    value={item.actualSalary}
-                                    onChange={(e) => handleItemChange(item.id, 'actualSalary', parseFloat(e.target.value) || 0)}
-                                    className="bg-white dark:bg-gray-600 border-gray-200 dark:border-gray-500 text-sm"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-xs font-medium text-gray-600">Percentage (%)</label>
-                                  <Input
-                                    type="number"
-                                    placeholder="Percentage"
-                                    value={item.percentage}
-                                    onChange={(e) => handleItemChange(item.id, 'percentage', parseFloat(e.target.value) || 0)}
-                                    className="bg-white dark:bg-gray-600 border-gray-200 dark:border-gray-500 text-sm"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <label className="text-xs font-medium text-gray-600">Payment (₹)</label>
-                                  <Input
-                                    value={item.payment.toLocaleString('en-IN')}
-                                    readOnly
-                                    className="bg-gray-50 dark:bg-gray-500 border-gray-200 dark:border-gray-400 text-sm font-medium"
-                                  />
+                              <div className="md:col-span-3">
+                                <label className="text-xs text-gray-500 block mb-1">Role</label>
+                                <Input value={item.role} onChange={(e) => updateItem(item.id, 'role', e.target.value)} />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="text-xs text-gray-500 block mb-1">Join Date</label>
+                                <Input type="date" value={item.joiningDate} onChange={(e) => updateItem(item.id, 'joiningDate', e.target.value)} className="text-xs" />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="text-xs text-gray-500 block mb-1">Actual Salary</label>
+                                <Input type="number" value={item.actualSalary} onChange={(e) => updateItem(item.id, 'actualSalary', e.target.value)} />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="text-xs text-gray-500 block mb-1">% Comm.</label>
+                                <div className="relative">
+                                  <Input type="number" value={item.percentage} onChange={(e) => updateItem(item.id, 'percentage', e.target.value)} />
+                                  <span className="absolute right-3 top-2 text-xs text-gray-400">%</span>
                                 </div>
                               </div>
                             </div>
-                          ))}
-                        </div>
+                            <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
+                              <p className="text-sm font-semibold text-gray-700">
+                                Payment: <span className="text-green-600 text-lg ml-2">₹{item.payment.toLocaleString('en-IN')}</span>
+                              </p>
+                            </div>
+                          </motion.div>
+                        ))
                       )}
                     </div>
                   </CardContent>
                 </Card>
+              </div>
 
-                {/* Action Buttons */}
-                <div className="flex justify-end gap-3">
-                  <Button
-                    onClick={resetForm}
-                    variant="outline"
-                    className="px-8"
-                  >
-                    Reset
-                  </Button>
-                  <Button
-                    onClick={handleSubmit}
-                    className="px-8 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 shadow-lg"
-                    disabled={form.items.length === 0}
-                  >
-                    <DocumentTextIcon className="w-4 h-4 mr-2" />
-                    Generate Invoice
-                  </Button>
-                </div>
-              </motion.div>
-            ) : (
-              /* Invoice Preview */
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5 }}
-                className="space-y-6"
-              >
-                <Card className="rounded-2xl bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg print:shadow-none print:border-0 print:bg-white">
-                  <CardContent className="p-0 print:p-0">
-                    <div id="printable-invoice" className="flex justify-center">
-                      <PrintableInvoice 
-                        form={form}
-                        selectedClient={selectedClient}
-                      />
+              {/* Right Column: Settings & Summary */}
+              <div className="space-y-6">
+                <Card className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-0 shadow-lg">
+                  <CardContent className="p-6">
+                    <p className="text-blue-100 mb-1 font-medium">Total Amount</p>
+                    <h2 className="text-4xl font-bold tracking-tight">₹ {form.total.toLocaleString('en-IN')}</h2>
+                    <div className="mt-6 pt-6 border-t border-blue-500/30 text-sm text-blue-100">
+                      {form.items.length} candidates included in this invoice.
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Preview Actions */}
-                <div className="flex justify-center gap-3 print:hidden">
-                  <Button
-                    onClick={() => setShowPreview(false)}
-                    variant="outline"
-                    className="px-8"
-                  >
-                    <PencilSquareIcon className="w-4 h-4 mr-2" />
-                    Edit Invoice
-                  </Button>
-                  <Button
-                    onClick={printInvoice}
-                    variant="outline"
-                    className="px-8 border-green-200 text-green-700 hover:bg-green-50 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-900/30"
-                  >
-                    <PrinterIcon className="w-4 h-4 mr-2" />
-                    Print Invoice
-                  </Button>
-                  <Button
-                    onClick={downloadInvoice}
-                    className="px-8 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 shadow-lg"
-                  >
-                    <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
-                    Download PDF
-                  </Button>
-                </div>
-              </motion.div>
-            )}
-
-            {/* Invoice Summary */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="space-y-6"
-            >
-              {/* Invoice Summary Card */}
-              <Card className="rounded-2xl bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg sticky top-6">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-2">
-                    <CalculatorIcon className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-                    <CardTitle className="text-xl font-semibold">
-                      Invoice Summary
+                <Card className="border-0 shadow-md">
+                   <CardHeader className="bg-gray-50/50 border-b border-gray-100">
+                    <CardTitle className="text-md flex items-center gap-2">
+                      <BanknotesIcon className="w-5 h-5 text-gray-500" />
+                      Sender Details (Internal)
                     </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
-                      <span className="text-gray-600 dark:text-gray-400">Total Candidates</span>
-                      <span className="font-medium text-gray-900 dark:text-white">{form.items.length}</span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
-                      <span className="text-gray-600 dark:text-gray-400">Total Payment</span>
-                      <span className="text-lg font-bold text-green-600 dark:text-green-400">₹{form.total.toLocaleString('en-IN')}</span>
-                    </div>
-                  </div>
-
-                  {/* Quick Stats */}
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{form.items.length}</div>
-                      <div className="text-xs text-gray-600 dark:text-gray-400">Candidates</div>
-                    </div>
-                    <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                      <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                        {Math.ceil((new Date(form.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))}
-                      </div>
-                      <div className="text-xs text-gray-600 dark:text-gray-400">Days Due</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Help Card */}
-              <Card className="rounded-2xl bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-0 shadow-lg">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-2">
-                    <DocumentTextIcon className="w-6 h-6 text-orange-600 dark:text-orange-400" />
-                    <CardTitle className="text-xl font-semibold">
-                      Printing Instructions
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
-                  <div className="flex items-start gap-2">
-                    <CheckCircleIcon className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                    <p>Optimized for A4 paper (210mm × 297mm)</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircleIcon className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                    <p>Plain format matching your screenshot exactly</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircleIcon className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                    <p>Use "Print Invoice" for direct printing</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
-        </div>
+                   </CardHeader>
+                   <CardContent className="p-4 space-y-3">
+                     <div>
+                       <label className="text-xs text-gray-500">Bank Name</label>
+                       <Input value={form.bankDetails.bankName} onChange={(e) => setForm({...form, bankDetails: {...form.bankDetails, bankName: e.target.value}})} className="h-8 text-sm" />
+                     </div>
+                     <div>
+                       <label className="text-xs text-gray-500">Account No</label>
+                       <Input value={form.bankDetails.accountNumber} onChange={(e) => setForm({...form, bankDetails: {...form.bankDetails, accountNumber: e.target.value}})} className="h-8 text-sm" />
+                     </div>
+                     <div>
+                       <label className="text-xs text-gray-500">PAN No</label>
+                       <Input value={form.bankDetails.pan} onChange={(e) => setForm({...form, bankDetails: {...form.bankDetails, pan: e.target.value}})} className="h-8 text-sm" />
+                     </div>
+                     <div>
+                       <label className="text-xs text-gray-500">Signatory Name</label>
+                       <Input value={form.authorizedSignatory} onChange={(e) => setForm({...form, authorizedSignatory: e.target.value})} className="h-8 text-sm" />
+                     </div>
+                   </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-center bg-gray-200/50 p-8 rounded-xl overflow-auto border border-gray-200">
+              <div id="printable-area" className="bg-white shadow-2xl">
+                 <PrintableInvoice form={form} selectedClient={selectedClient} />
+              </div>
+            </div>
+          )}
+        </motion.div>
       </div>
     </div>
   );
 };
 
-export default ClientInvoice;
+export default AdminClientInvoice;

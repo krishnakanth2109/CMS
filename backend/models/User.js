@@ -1,3 +1,4 @@
+
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
@@ -5,8 +6,8 @@ const userSchema = mongoose.Schema({
   recruiterId: { 
     type: String, 
     unique: true, 
-    sparse: true, // Allows multiple null values (essential for admins who don't have IDs)
-    required: false // MUST BE FALSE so admins can be saved without it
+    sparse: true, 
+    required: false 
   }, 
   name: { type: String, required: true },
   username: { type: String },
@@ -20,6 +21,18 @@ const userSchema = mongoose.Schema({
   },
   profilePicture: { type: String },
   active: { type: Boolean, default: true },
+  
+  // Extended Profile Fields
+  location: { type: String },
+  specialization: { type: String },
+  experience: { type: String },
+  bio: { type: String },
+  socials: {
+    linkedin: String,
+    github: String,
+    twitter: String,
+    website: String
+  }
 }, {
   timestamps: true,
 });

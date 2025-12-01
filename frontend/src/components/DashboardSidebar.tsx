@@ -54,7 +54,11 @@ export function DashboardSidebar() {
 
   const toggleSidebar = () => setCollapsed(!collapsed);
 
-  // ✔ Admin Sidebar Items
+  // Determine Role and Title
+  const isAdmin = user?.role === "admin";
+  const hubTitle = isAdmin ? "AdminHub" : "RecruiterHub";
+
+  // Admin Sidebar Items
   const adminItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
     { icon: Users, label: "Recruiters", path: "/admin/recruiters" },
@@ -63,24 +67,24 @@ export function DashboardSidebar() {
     { icon: Building, label: "Client Info", path: "/admin/clients" },
     { icon: Receipt, label: "Client Invoice", path: "/admin/invoices" },
     { icon: Calendar, label: "Recruiter Schedules", path: "/admin/schedules" },
-    { icon: MessageSquare, label: "Messages", path: "/admin/messages" }, // Admin Messages
+    { icon: MessageSquare, label: "Messages", path: "/admin/messages" },
     { icon: BarChart3, label: "Reports & Analytics", path: "/admin/reports" },
     { icon: Settings, label: "Settings", path: "/admin/settings" },
   ];
 
-  // ✔ Recruiter Sidebar Items
+  // Recruiter Sidebar Items
   const recruiterItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/recruiter" },
     { icon: Database, label: "My Candidates", path: "/recruiter/candidates" },
     { icon: Briefcase, label: "My Jobs", path: "/recruiter/assignments" },
-    { icon: Calendar, label: "My Interviews", path: "/recruiter/schedules" }, // Corrected path
-    { icon: MessageSquare, label: "Messages", path: "/recruiter/messages" }, // Recruiter Messages
+    { icon: Calendar, label: "My Interviews", path: "/recruiter/schedules" },
+    { icon: MessageSquare, label: "Messages", path: "/recruiter/messages" },
     { icon: FileText, label: "Reports", path: "/recruiter/reports" },
     { icon: UserCircle, label: "Profile", path: "/recruiter/profile" },
     { icon: Settings, label: "Settings", path: "/recruiter/settings" },
   ];
 
-  const items = user?.role === "admin" ? adminItems : recruiterItems;
+  const items = isAdmin ? adminItems : recruiterItems;
 
   return (
     <motion.div
@@ -96,11 +100,12 @@ export function DashboardSidebar() {
             </div>
 
             <div>
+              {/* Dynamic Hub Title */}
               <h2 className="text-lg font-bold text-sidebar-foreground">
-                RecruiterHub
+                {hubTitle}
               </h2>
               <p className="text-xs text-sidebar-foreground/60">
-                {user?.role === "admin" ? "Admin Panel" : "Recruiter Portal"}
+                {isAdmin ? "Admin Panel" : "Recruiter Portal"}
               </p>
             </div>
           </div>

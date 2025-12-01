@@ -4,10 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useData } from "@/contexts/DataContext";
+// Removed useData from imports as we fetch directly now
+// import { useData } from "@/contexts/DataContext"; 
 import { Recruiter, Candidate } from "@/types";
 import {
-  AlertTriangle, UserPlus, Search, Mail, Phone, TrendingUp, X, Download, Grid3X3, List, Edit, Trash2, UserX, UserCheck, IdCard, Camera, Briefcase, MoreVertical, Users
+  AlertTriangle, UserPlus, Search, Mail, Phone, TrendingUp, X, Download, Grid3X3, List, Edit, Trash2, UserX, UserCheck, IdCard, Camera, Briefcase, MoreVertical, Users, Eye, EyeOff, ArrowUpDown
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -35,33 +36,38 @@ type ViewMode = "grid" | "list";
 type SortField = "name" | "email" | "recruiterId" | "role" | "submissions" | "interviews" | "offers" | "joined" | "status";
 type SortOrder = "asc" | "desc";
 
+// Extended Candidate interface for frontend mapping if needed
+interface CandidateWithId extends Candidate {
+  _id?: string;
+  recruiterId: string; // Ensure string for comparison
+}
+
 export default function AdminRecruiters() {
   const navigate = useNavigate();
-  // We still use candidates from context (mock), but manage recruiters via API
-  const { candidates } = useData(); 
   
-  // Local state for recruiters fetched from DB
+  // State for Data
   const [recruiters, setRecruiters] = useState<Recruiter[]>([]);
+  const [candidates, setCandidates] = useState<CandidateWithId[]>([]); // Fetched candidates
   const [isLoading, setIsLoading] = useState(true);
 
-  // Search/Sort/Modal States
+  // UI State
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [sortField, setSortField] = useState<SortField>("name");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("asc"); // Unused in logic but kept for UI toggle if needed
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showPerformanceModal, setShowPerformanceModal] = useState(false);
   
-  // Stats Modal States
-  const [showStatsModal, setShowStatsModal] = useState(false);
   const [selectedStatsRecruiters, setSelectedStatsRecruiters] = useState<Recruiter[]>([]);
   const [statsModalTitle, setStatsModalTitle] = useState("");
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [statsModalType, setStatsModalType] = useState<'total' | 'active' | 'inactive' | 'roles'>('total');
 
-  // Candidate Details Modal States (Simplified for this view)
+  const [showStatsModal, setShowStatsModal] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [showCandidatesModal, setShowCandidatesModal] = useState(false);
   const [candidatesModalTitle, setCandidatesModalTitle] = useState("");
 
@@ -71,7 +77,13 @@ export default function AdminRecruiters() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Form States - UPDATED DEFAULT ROLE TO LOWERCASE 'recruiter'
+  // Password Visibility State
+  const [showPassword, setShowPassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
+
+  // Error State
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
   const [newRecruiter, setNewRecruiter] = useState({
     recruiterId: "",
     name: "",
@@ -100,7 +112,6 @@ export default function AdminRecruiters() {
   const [performanceData, setPerformanceData] = useState<PerformanceRow[]>([]);
 
   // --- API Functions ---
-
   const getAuthHeader = () => {
     const token = sessionStorage.getItem('authToken');
     return {
@@ -109,23 +120,35 @@ export default function AdminRecruiters() {
     };
   };
 
-  const fetchRecruiters = async () => {
+  const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`${API_URL}/recruiters`, {
-        headers: getAuthHeader()
-      });
-      if (!response.ok) throw new Error('Failed to fetch recruiters');
+      const headers = getAuthHeader();
       
-      const data = await response.json();
-      // Map _id to id for frontend compatibility
-      const mappedData = data.map((r: any) => ({ ...r, id: r._id }));
-      setRecruiters(mappedData);
+      // Fetch Recruiters and Candidates in parallel
+      const [recruiterRes, candidateRes] = await Promise.all([
+        fetch(`${API_URL}/recruiters`, { headers }),
+        fetch(`${API_URL}/candidates`, { headers })
+      ]);
+
+      if (!recruiterRes.ok) throw new Error('Failed to fetch recruiters');
+      if (!candidateRes.ok) throw new Error('Failed to fetch candidates');
+      
+      const recruiterData = await recruiterRes.json();
+      const candidateData = await candidateRes.json();
+
+      // Map _id to id for frontend consistency
+      const mappedRecruiters = recruiterData.map((r: any) => ({ ...r, id: r._id }));
+      const mappedCandidates = candidateData.map((c: any) => ({ ...c, id: c._id }));
+
+      setRecruiters(mappedRecruiters);
+      setCandidates(mappedCandidates);
+
     } catch (error) {
       console.error(error);
       toast({
         title: "Error",
-        description: "Failed to load recruiters",
+        description: "Failed to load data",
         variant: "destructive"
       });
     } finally {
@@ -133,23 +156,42 @@ export default function AdminRecruiters() {
     }
   };
 
-  // Initial Load
   useEffect(() => {
-    fetchRecruiters();
+    fetchData();
   }, []);
 
-  // --- Handlers ---
+  // --- Validation Logic ---
+  const validateForm = (data: any, isEdit = false) => {
+    const newErrors: Record<string, string> = {};
+    
+    if (!data.name.trim()) newErrors.name = "Name is required";
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!data.email.trim()) newErrors.email = "Email is required";
+    else if (!emailRegex.test(data.email)) newErrors.email = "Invalid email format";
+    
+    const phoneRegex = /^\d{10}$/;
+    if (data.phone && !phoneRegex.test(data.phone)) newErrors.phone = "Phone must be exactly 10 digits";
+    
+    if (!data.recruiterId.trim()) newErrors.recruiterId = "Recruiter ID is required";
+    
+    if (!isEdit && (!data.password || data.password.length < 6)) {
+      newErrors.password = "Password must be at least 6 characters";
+    }
 
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // --- Handlers ---
   const handleAddRecruiter = async () => {
-    if (!newRecruiter.name || !newRecruiter.email || !newRecruiter.recruiterId || !newRecruiter.password) {
-      toast({ title: "Error", description: "Please fill all required fields.", variant: "destructive" });
+    if (!validateForm(newRecruiter)) {
+      toast({ title: "Validation Error", description: "Please fix the errors in the form", variant: "destructive" });
       return;
     }
 
     try {
-      // Force role to be 'recruiter'
       const payload = { ...newRecruiter, role: 'recruiter' };
-      
       const response = await fetch(`${API_URL}/recruiters`, {
         method: 'POST',
         headers: getAuthHeader(),
@@ -157,10 +199,7 @@ export default function AdminRecruiters() {
       });
 
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to create recruiter');
-      }
+      if (!response.ok) throw new Error(data.message || 'Failed to create recruiter');
 
       toast({ title: "Success", description: "Recruiter added successfully!" });
       setShowModal(false);
@@ -168,22 +207,21 @@ export default function AdminRecruiters() {
         recruiterId: "", name: "", email: "", phone: "", username: "", 
         password: "", profilePicture: "", role: "recruiter"
       });
-      fetchRecruiters(); // Refresh list
+      setErrors({});
+      fetchData(); // Refresh data
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   };
 
   const handleEditRecruiter = async () => {
-    if (!editRecruiter.name || !editRecruiter.email || !editRecruiter.recruiterId) {
-      toast({ title: "Error", description: "Please fill all required fields.", variant: "destructive" });
+    if (!validateForm(editRecruiter, true)) {
+      toast({ title: "Validation Error", description: "Please fix the errors in the form", variant: "destructive" });
       return;
     }
 
     try {
-      // Force role to be 'recruiter'
       const payload = { ...editRecruiter, role: 'recruiter' };
-
       const response = await fetch(`${API_URL}/recruiters/${editRecruiter.id}`, {
         method: 'PUT',
         headers: getAuthHeader(),
@@ -191,14 +229,12 @@ export default function AdminRecruiters() {
       });
 
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to update recruiter');
-      }
+      if (!response.ok) throw new Error(data.message || 'Failed to update recruiter');
 
       toast({ title: "Success", description: "Recruiter updated successfully!" });
       setShowEditModal(false);
-      fetchRecruiters(); // Refresh list
+      setErrors({});
+      fetchData(); // Refresh data
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -206,19 +242,16 @@ export default function AdminRecruiters() {
 
   const handleDeleteRecruiter = async () => {
     if (!recruiterToDelete) return;
-
     try {
       const response = await fetch(`${API_URL}/recruiters/${recruiterToDelete.id}`, {
         method: 'DELETE',
         headers: getAuthHeader()
       });
-
       if (!response.ok) throw new Error('Failed to delete recruiter');
-
       toast({ title: "Success", description: "Recruiter deleted successfully!" });
       setShowDeleteModal(false);
       setRecruiterToDelete(null);
-      fetchRecruiters();
+      fetchData(); // Refresh data
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -230,12 +263,10 @@ export default function AdminRecruiters() {
         method: 'PATCH',
         headers: getAuthHeader()
       });
-
       if (!response.ok) throw new Error('Failed to update status');
-
       const data = await response.json();
       toast({ title: "Success", description: data.message });
-      fetchRecruiters();
+      fetchData(); // Refresh data
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -250,29 +281,44 @@ export default function AdminRecruiters() {
       phone: recruiter.phone || "",
       username: recruiter.username || "",
       profilePicture: recruiter.profilePicture || "",
-      role: "recruiter", // Force lowercase default
-      password: "", // Reset password field
+      role: "recruiter",
+      password: "",
     });
+    setErrors({});
     setShowEditModal(true);
   };
 
   // --- Logic & Helpers ---
-
   const calculateRecruiterStats = (recruiterId: string) => {
-    // Note: Assuming candidates have a field 'recruiterId' that matches
-    const recruiterCandidates = candidates.filter(candidate => candidate.recruiterId === recruiterId);
-    
+    // Filter based on the real candidates data fetched from backend
+    const recruiterCandidates = candidates.filter(candidate => 
+      candidate.recruiterId === recruiterId
+    );
+
     return {
       totalSubmissions: recruiterCandidates.length,
       interviews: recruiterCandidates.filter(c => ['L1 Interview', 'L2 Interview', 'Interview'].includes(c.status)).length,
       offers: recruiterCandidates.filter(c => c.status === 'Offer').length,
       joined: recruiterCandidates.filter(c => c.status === 'Joined').length,
       rejected: recruiterCandidates.filter(c => c.status === 'Rejected').length,
-      pending: recruiterCandidates.filter(c => c.status === 'Pending').length
+      pending: recruiterCandidates.filter(c => c.status === 'Pending' || c.status === 'Submitted').length
     };
   };
 
-  // Sort and Filter
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortOrder("asc");
+    }
+  };
+
+  const getSortIcon = (field: SortField) => {
+    if (sortField !== field) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-50" />;
+    return <span className="ml-1">{sortOrder === "asc" ? "↑" : "↓"}</span>;
+  };
+
   const filteredAndSortedRecruiters = recruiters
     .filter((r: Recruiter) =>
       r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -302,33 +348,26 @@ export default function AdminRecruiters() {
       return aValue < bValue ? 1 : -1;
     });
 
-  // Image Upload Logic
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>, isEdit: boolean = false) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const result = e.target?.result as string;
-          if (isEdit) {
-            setEditRecruiter({ ...editRecruiter, profilePicture: result });
-          } else {
-            setNewRecruiter({ ...newRecruiter, profilePicture: result });
-          }
-          toast({ title: "Success", description: "Picture uploaded" });
-        };
-        reader.readAsDataURL(file);
-      } else {
-        toast({ title: "Error", description: "Invalid image file", variant: "destructive" });
-      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        if (isEdit) {
+          setEditRecruiter({ ...editRecruiter, profilePicture: result });
+        } else {
+          setNewRecruiter({ ...newRecruiter, profilePicture: result });
+        }
+        toast({ title: "Success", description: "Picture uploaded" });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
   const triggerFileInput = (isEdit: boolean = false) => {
     isEdit ? editFileInputRef.current?.click() : fileInputRef.current?.click();
   };
-
-  // --- Render Helpers ---
 
   const getStatusBadge = (recruiter: Recruiter) => {
     const isActive = recruiter.active !== false;
@@ -376,7 +415,6 @@ export default function AdminRecruiters() {
     doc.save("report.pdf");
   };
 
-  // Stats for top cards
   const totalRecruiters = recruiters.length;
   const activeRecruiters = recruiters.filter(r => r.active !== false).length;
   const inactiveRecruiters = recruiters.filter(r => r.active === false).length;
@@ -414,7 +452,7 @@ export default function AdminRecruiters() {
               <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Recruiters Management</h1>
               <p className="text-gray-500">Manage your recruitment team</p>
             </div>
-            <Button onClick={() => setShowModal(true)} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={() => { setShowModal(true); setErrors({}); }} className="bg-blue-600 hover:bg-blue-700">
               <UserPlus className="h-4 w-4 mr-2" /> Add Recruiter
             </Button>
           </div>
@@ -543,18 +581,28 @@ export default function AdminRecruiters() {
                 </div>
               )}
 
-              {/* List View */}
+              {/* List View - UPDATED with Full Column Names */}
               {viewMode === "list" && (
                 <Card>
                   <CardContent className="p-0 overflow-x-auto">
                     <table className="w-full text-sm text-left">
                       <thead className="bg-gray-50 dark:bg-gray-800 text-xs uppercase text-gray-500 font-medium">
                         <tr>
-                          <th className="px-4 py-3">Recruiter</th>
-                          <th className="px-4 py-3">ID</th>
+                          <th className="px-4 py-3 cursor-pointer hover:bg-gray-100" onClick={() => toggleSort('name')}>
+                            Recruiter {getSortIcon('name')}
+                          </th>
+                          <th className="px-4 py-3 cursor-pointer hover:bg-gray-100" onClick={() => toggleSort('recruiterId')}>
+                            ID {getSortIcon('recruiterId')}
+                          </th>
                           <th className="px-4 py-3">Role</th>
                           <th className="px-4 py-3">Status</th>
-                          <th className="px-4 py-3 text-center">Stats (S/I/O/J)</th>
+                          
+                          {/* Updated Column Headers to Full Names */}
+                          <th className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onClick={() => toggleSort('submissions')}>Submissions {getSortIcon('submissions')}</th>
+                          <th className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onClick={() => toggleSort('interviews')}>Interviews {getSortIcon('interviews')}</th>
+                          <th className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onClick={() => toggleSort('offers')}>Offers {getSortIcon('offers')}</th>
+                          <th className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onClick={() => toggleSort('joined')}>Joined {getSortIcon('joined')}</th>
+                          
                           <th className="px-4 py-3 text-right">Actions</th>
                         </tr>
                       </thead>
@@ -577,9 +625,21 @@ export default function AdminRecruiters() {
                               <td className="px-4 py-3">{recruiter.recruiterId}</td>
                               <td className="px-4 py-3">{recruiter.role}</td>
                               <td className="px-4 py-3">{getStatusBadge(recruiter)}</td>
-                              <td className="px-4 py-3 text-center">
-                                {stats.totalSubmissions} / {stats.interviews} / {stats.offers} / {stats.joined}
+                              
+                              {/* Stats Cells */}
+                              <td className="px-4 py-3 text-center font-medium text-blue-600 cursor-pointer hover:bg-blue-50 rounded" onClick={() => handleStatCardClick(recruiter, 'submissions')}>
+                                {stats.totalSubmissions}
                               </td>
+                              <td className="px-4 py-3 text-center font-medium text-purple-600 cursor-pointer hover:bg-purple-50 rounded" onClick={() => handleStatCardClick(recruiter, 'interviews')}>
+                                {stats.interviews}
+                              </td>
+                              <td className="px-4 py-3 text-center font-medium text-green-600 cursor-pointer hover:bg-green-50 rounded" onClick={() => handleStatCardClick(recruiter, 'offers')}>
+                                {stats.offers}
+                              </td>
+                              <td className="px-4 py-3 text-center font-medium text-orange-600 cursor-pointer hover:bg-orange-50 rounded" onClick={() => handleStatCardClick(recruiter, 'joined')}>
+                                {stats.joined}
+                              </td>
+
                               <td className="px-4 py-3 text-right">
                                 <Button variant="ghost" size="icon" onClick={() => openEditModal(recruiter)}><Edit className="h-4 w-4"/></Button>
                                 <Button variant="ghost" size="icon" onClick={() => { setRecruiterToDelete(recruiter); setShowDeleteModal(true); }} className="text-red-500"><Trash2 className="h-4 w-4"/></Button>
@@ -610,23 +670,61 @@ export default function AdminRecruiters() {
                      <input type="file" ref={fileInputRef} hidden onChange={(e) => handleFileUpload(e, false)} />
                      <Button variant="outline" size="sm" onClick={() => triggerFileInput(false)}>Upload Photo</Button>
                    </div>
+                   
                    <div className="grid grid-cols-2 gap-4">
-                     <div><label className="text-sm font-medium">Recruiter ID *</label><Input value={newRecruiter.recruiterId} onChange={e => setNewRecruiter({...newRecruiter, recruiterId: e.target.value})} /></div>
-                     <div><label className="text-sm font-medium">Full Name *</label><Input value={newRecruiter.name} onChange={e => setNewRecruiter({...newRecruiter, name: e.target.value})} /></div>
+                     <div>
+                        <label className="text-sm font-medium">Recruiter ID *</label>
+                        <Input value={newRecruiter.recruiterId} onChange={e => setNewRecruiter({...newRecruiter, recruiterId: e.target.value})} className={errors.recruiterId ? "border-red-500" : ""} />
+                        {errors.recruiterId && <p className="text-xs text-red-500 mt-1">{errors.recruiterId}</p>}
+                     </div>
+                     <div>
+                        <label className="text-sm font-medium">Full Name *</label>
+                        <Input value={newRecruiter.name} onChange={e => setNewRecruiter({...newRecruiter, name: e.target.value})} className={errors.name ? "border-red-500" : ""} />
+                        {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
+                     </div>
                    </div>
-                   <div><label className="text-sm font-medium">Email *</label><Input value={newRecruiter.email} onChange={e => setNewRecruiter({...newRecruiter, email: e.target.value})} /></div>
+                   
+                   <div>
+                      <label className="text-sm font-medium">Email *</label>
+                      <Input value={newRecruiter.email} onChange={e => setNewRecruiter({...newRecruiter, email: e.target.value})} className={errors.email ? "border-red-500" : ""} />
+                      {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
+                   </div>
+
                    <div className="grid grid-cols-2 gap-4">
-                     <div><label className="text-sm font-medium">Phone</label><Input value={newRecruiter.phone} onChange={e => setNewRecruiter({...newRecruiter, phone: e.target.value})} /></div>
+                     <div>
+                        <label className="text-sm font-medium">Phone</label>
+                        <Input value={newRecruiter.phone} onChange={e => setNewRecruiter({...newRecruiter, phone: e.target.value})} maxLength={10} className={errors.phone ? "border-red-500" : ""} />
+                        {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
+                     </div>
                      <div>
                        <label className="text-sm font-medium">Role</label>
-                       {/* Fixed to read-only "Recruiter" to match backend enum */}
                        <Input value="Recruiter" disabled className="bg-gray-100 dark:bg-gray-800 text-gray-500" />
                      </div>
                    </div>
+
                    <div className="grid grid-cols-2 gap-4">
                      <div><label className="text-sm font-medium">Username</label><Input value={newRecruiter.username} onChange={e => setNewRecruiter({...newRecruiter, username: e.target.value})} /></div>
-                     <div><label className="text-sm font-medium">Password *</label><Input type="password" value={newRecruiter.password} onChange={e => setNewRecruiter({...newRecruiter, password: e.target.value})} /></div>
+                     <div>
+                        <label className="text-sm font-medium">Password *</label>
+                        <div className="relative">
+                          <Input 
+                            type={showPassword ? "text" : "password"} 
+                            value={newRecruiter.password} 
+                            onChange={e => setNewRecruiter({...newRecruiter, password: e.target.value})} 
+                            className={errors.password ? "border-red-500" : ""}
+                          />
+                          <button 
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-2 top-2.5 text-gray-500 hover:text-gray-700"
+                          >
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                        {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password}</p>}
+                     </div>
                    </div>
+
                    <div className="flex justify-end gap-2 mt-4">
                      <Button variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
                      <Button onClick={handleAddRecruiter}>Save Recruiter</Button>
@@ -651,23 +749,60 @@ export default function AdminRecruiters() {
                      <input type="file" ref={editFileInputRef} hidden onChange={(e) => handleFileUpload(e, true)} />
                      <Button variant="outline" size="sm" onClick={() => triggerFileInput(true)}>Change Photo</Button>
                    </div>
+
                    <div className="grid grid-cols-2 gap-4">
-                     <div><label className="text-sm font-medium">Recruiter ID *</label><Input value={editRecruiter.recruiterId} onChange={e => setEditRecruiter({...editRecruiter, recruiterId: e.target.value})} /></div>
-                     <div><label className="text-sm font-medium">Full Name *</label><Input value={editRecruiter.name} onChange={e => setEditRecruiter({...editRecruiter, name: e.target.value})} /></div>
+                     <div>
+                        <label className="text-sm font-medium">Recruiter ID *</label>
+                        <Input value={editRecruiter.recruiterId} onChange={e => setEditRecruiter({...editRecruiter, recruiterId: e.target.value})} className={errors.recruiterId ? "border-red-500" : ""} />
+                        {errors.recruiterId && <p className="text-xs text-red-500 mt-1">{errors.recruiterId}</p>}
+                     </div>
+                     <div>
+                        <label className="text-sm font-medium">Full Name *</label>
+                        <Input value={editRecruiter.name} onChange={e => setEditRecruiter({...editRecruiter, name: e.target.value})} className={errors.name ? "border-red-500" : ""} />
+                        {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
+                     </div>
                    </div>
-                   <div><label className="text-sm font-medium">Email *</label><Input value={editRecruiter.email} onChange={e => setEditRecruiter({...editRecruiter, email: e.target.value})} /></div>
+
+                   <div>
+                      <label className="text-sm font-medium">Email *</label>
+                      <Input value={editRecruiter.email} onChange={e => setEditRecruiter({...editRecruiter, email: e.target.value})} className={errors.email ? "border-red-500" : ""} />
+                      {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
+                   </div>
+
                    <div className="grid grid-cols-2 gap-4">
-                     <div><label className="text-sm font-medium">Phone</label><Input value={editRecruiter.phone} onChange={e => setEditRecruiter({...editRecruiter, phone: e.target.value})} /></div>
+                     <div>
+                        <label className="text-sm font-medium">Phone</label>
+                        <Input value={editRecruiter.phone} onChange={e => setEditRecruiter({...editRecruiter, phone: e.target.value})} maxLength={10} className={errors.phone ? "border-red-500" : ""} />
+                        {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
+                     </div>
                      <div>
                        <label className="text-sm font-medium">Role</label>
-                       {/* Fixed to read-only "Recruiter" to match backend enum */}
                        <Input value="Recruiter" disabled className="bg-gray-100 dark:bg-gray-800 text-gray-500" />
                      </div>
                    </div>
+
                    <div className="grid grid-cols-2 gap-4">
                      <div><label className="text-sm font-medium">Username</label><Input value={editRecruiter.username} onChange={e => setEditRecruiter({...editRecruiter, username: e.target.value})} /></div>
-                     <div><label className="text-sm font-medium">Password</label><Input type="password" placeholder="Leave blank to keep current" value={editRecruiter.password} onChange={e => setEditRecruiter({...editRecruiter, password: e.target.value})} /></div>
+                     <div>
+                        <label className="text-sm font-medium">Password</label>
+                        <div className="relative">
+                          <Input 
+                            type={showEditPassword ? "text" : "password"} 
+                            placeholder="Leave blank to keep current" 
+                            value={editRecruiter.password} 
+                            onChange={e => setEditRecruiter({...editRecruiter, password: e.target.value})} 
+                          />
+                          <button 
+                            type="button"
+                            onClick={() => setShowEditPassword(!showEditPassword)}
+                            className="absolute right-2 top-2.5 text-gray-500 hover:text-gray-700"
+                          >
+                            {showEditPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                     </div>
                    </div>
+
                    <div className="flex justify-end gap-2 mt-4">
                      <Button variant="outline" onClick={() => setShowEditModal(false)}>Cancel</Button>
                      <Button onClick={handleEditRecruiter}>Update Recruiter</Button>

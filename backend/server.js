@@ -1,3 +1,4 @@
+
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
@@ -17,9 +18,9 @@ import messageRoutes from './routes/messageRoutes.js';
 dotenv.config();
 
 const app = express();
-const httpServer = createServer(app); // 1. Create HTTP Server
+const httpServer = createServer(app);
 
-// 2. Initialize Socket.IO on the HTTP Server
+// Initialize Socket.IO
 const io = new Server(httpServer, {
   cors: {
     origin: [
@@ -48,8 +49,10 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// --- CRITICAL FIX: Increased Limit for Image Uploads ---
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// --------------------------------------------------------
 
 // Database Connection
 const connectDB = async () => {
@@ -111,13 +114,12 @@ app.get('/', (req, res) => {
 
 // Error Handler
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: 'Internal Server Error' });
+  console.error("Server Error Log:", err.stack); // Added better logging
+  res.status(500).json({ error: 'Internal Server Error', details: err.message });
 });
 
 const PORT = process.env.PORT || 5000;
 
-// 3. LISTEN ON HTTP SERVER (Not app.listen)
 httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔌 Socket.IO initialized`);

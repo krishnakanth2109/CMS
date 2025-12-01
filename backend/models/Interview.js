@@ -1,14 +1,13 @@
 import mongoose from 'mongoose';
 
 const interviewSchema = mongoose.Schema({
-  interviewId: { type: String, unique: true }, // e.g., INT-001
+  interviewId: { type: String, unique: true }, // e.g., INT-1699999999
   candidateId: { type: mongoose.Schema.Types.ObjectId, ref: 'Candidate', required: true },
   recruiterId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job' }, // Optional
+  jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job' }, 
   
-  // Schedule Details
-  interviewDate: { type: Date, required: true }, // Stores Date + Time
-  duration: { type: Number, default: 60 }, // Minutes
+  interviewDate: { type: Date, required: true },
+  duration: { type: Number, default: 60 },
   type: { 
     type: String, 
     enum: ['Virtual', 'In-person', 'Phone'], 
@@ -17,7 +16,6 @@ const interviewSchema = mongoose.Schema({
   location: { type: String, default: 'Remote' },
   meetingLink: { type: String },
   
-  // Status & Meta
   status: {
     type: String,
     enum: ['Scheduled', 'Completed', 'Cancelled', 'No Show'],
@@ -37,11 +35,14 @@ const interviewSchema = mongoose.Schema({
   timestamps: true,
 });
 
-// Middleware to generate custom Interview ID
-interviewSchema.pre('save', async function (next) {
+// FIXED: Use timestamp + random string to ensure uniqueness
+interviewSchema.pre('save', function (next) {
   if (!this.isNew) return next();
-  const count = await mongoose.model('Interview').countDocuments();
-  this.interviewId = `INT-${(count + 1).toString().padStart(4, '0')}`;
+  
+  // Generates ID like: INT-1701234567890-AB12
+  const uniqueSuffix = Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
+  this.interviewId = `INT-${uniqueSuffix}`;
+  
   next();
 });
 
