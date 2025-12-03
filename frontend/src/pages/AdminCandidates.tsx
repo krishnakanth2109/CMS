@@ -31,18 +31,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, Filter, Download, User, Phone, Mail, Building, Briefcase, Clock, AlertTriangle, AlertCircle, Copy, Check, Plus, Edit, Trash2 } from 'lucide-react';
+import { Search, Filter, Download, User, Phone, Mail, Building, Check, Copy, Plus, Edit, Eye, EyeOff, LayoutGrid, List } from 'lucide-react';
 import { CandidateStatus, Candidate, Recruiter } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 
 // Env var
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+// Extend Candidate to include _id and active status
+interface BackendCandidate extends Candidate {
+  _id: string;
+  active?: boolean;
+  dateAdded?: string;
+}
+
 export default function AdminCandidates() {
   const { toast } = useToast();
   
   // Data State
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidates, setCandidates] = useState<BackendCandidate[]>([]);
   const [recruiters, setRecruiters] = useState<Recruiter[]>([]); 
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,6 +66,9 @@ export default function AdminCandidates() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
+  // Validation State
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
   // Form Data
   const [formData, setFormData] = useState({
     name: '',
@@ -68,7 +78,7 @@ export default function AdminCandidates() {
     skills: '',
     client: '',
     status: 'Submitted' as CandidateStatus,
-    recruiterId: '', // Admin selects this
+    recruiterId: '',
     assignedJobId: '',
     totalExperience: '',
     relevantExperience: '',
@@ -91,13 +101,21 @@ export default function AdminCandidates() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch Candidates
-      const resCand = await fetch(`${API_URL}/candidates`, { headers: getAuthHeader() });
-      if (resCand.ok) setCandidates(await resCand.json());
+      const [resCand, resRec] = await Promise.all([
+        fetch(`${API_URL}/candidates`, { headers: getAuthHeader() }),
+        fetch(`${API_URL}/recruiters`, { headers: getAuthHeader() })
+      ]);
 
-      // 2. Fetch Recruiters (to assign candidates)
-      const resRec = await fetch(`${API_URL}/recruiters`, { headers: getAuthHeader() });
-      if (resRec.ok) setRecruiters(await resRec.json());
+      if (resCand.ok) {
+        const data = await resCand.json();
+        const mappedCandidates = data.map((c: any) => ({ ...c, id: c._id }));
+        setCandidates(mappedCandidates);
+      }
+
+      if (resRec.ok) {
+        const data = await resRec.json();
+        setRecruiters(data.map((r: any) => ({ ...r, id: r._id })));
+      }
 
     } catch (error) {
       console.error(error);
@@ -111,10 +129,63 @@ export default function AdminCandidates() {
     fetchData();
   }, []);
 
+  // --- Validation Logic ---
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+    const data = formData;
+
+    // --- UPDATED NAME VALIDATION ---
+    // Only allows Alphabets (a-z, A-Z), spaces, hyphens, and apostrophes.
+    // Explicitly rejects numbers.
+    const nameRegex = /^[a-zA-Z\s'-]+$/;
+
+    if (!data.name.trim()) {
+      newErrors.name = "Full Name is required";
+    } else if (data.name.length < 2) {
+      newErrors.name = "Name must be at least 2 characters";
+    } else if (!nameRegex.test(data.name)) {
+      newErrors.name = "Name cannot contain numbers or special characters";
+    }
+
+    // Email Regex
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!data.email.trim()) newErrors.email = "Email is required";
+    else if (!emailRegex.test(data.email)) newErrors.email = "Invalid email format";
+
+    // Phone Regex (Simple 10-15 digits)
+    const phoneRegex = /^[0-9+\s-]{10,15}$/;
+    if (!data.contact.trim()) newErrors.contact = "Phone number is required";
+    else if (!phoneRegex.test(data.contact)) newErrors.contact = "Enter a valid phone number";
+
+    if (!data.position.trim()) newErrors.position = "Position is required";
+    if (!data.client.trim()) newErrors.client = "Client is required";
+    if (!data.skills.toString().trim()) newErrors.skills = "At least one skill is required";
+    
+    // Dropdown Required
+    if (!data.recruiterId) newErrors.recruiterId = "Please assign a recruiter";
+
+    // Numeric/Format Checks (if provided)
+    if (data.totalExperience && isNaN(parseFloat(data.totalExperience))) newErrors.totalExperience = "Must be a number";
+    if (data.relevantExperience && isNaN(parseFloat(data.relevantExperience))) newErrors.relevantExperience = "Must be a number";
+    if (data.ctc && isNaN(parseFloat(data.ctc))) newErrors.ctc = "Must be a number";
+    if (data.ectc && isNaN(parseFloat(data.ectc))) newErrors.ectc = "Must be a number";
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   // --- Handlers ---
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    // Clear error for specific field on change
+    if (errors[field]) {
+      setErrors(prev => {
+        const newErrs = { ...prev };
+        delete newErrs[field];
+        return newErrs;
+      });
+    }
   };
 
   const resetForm = () => {
@@ -124,6 +195,7 @@ export default function AdminCandidates() {
       totalExperience: '', relevantExperience: '', ctc: '', ectc: '', 
       noticePeriod: '', notes: '', dateAdded: new Date().toISOString().split('T')[0],
     });
+    setErrors({});
     setIsEditMode(false);
     setSelectedCandidateId(null);
   };
@@ -133,9 +205,10 @@ export default function AdminCandidates() {
     setIsDialogOpen(true);
   };
 
-  const handleOpenEditDialog = (c: Candidate) => {
+  const handleOpenEditDialog = (c: BackendCandidate) => {
+    setErrors({});
     setIsEditMode(true);
-    setSelectedCandidateId(c.id); // or c._id
+    setSelectedCandidateId(c._id || c.id); 
     setFormData({
       name: c.name,
       email: c.email || '',
@@ -144,7 +217,7 @@ export default function AdminCandidates() {
       skills: Array.isArray(c.skills) ? c.skills.join(', ') : c.skills || '',
       client: c.client || '',
       status: c.status,
-      recruiterId: c.recruiterId || '',
+      recruiterId: typeof c.recruiterId === 'object' ? (c.recruiterId as any)._id : c.recruiterId || '',
       assignedJobId: c.assignedJobId || '',
       totalExperience: c.totalExperience || '',
       relevantExperience: c.relevantExperience || '',
@@ -158,19 +231,10 @@ export default function AdminCandidates() {
   };
 
   const handleSubmit = async () => {
-    // VALIDATION: Ensure all required fields are present
-    if (
-      !formData.name || 
-      !formData.email || 
-      !formData.recruiterId || 
-      !formData.contact || 
-      !formData.position || 
-      !formData.client || 
-      !formData.skills
-    ) {
+    if (!validateForm()) {
       toast({ 
         title: "Validation Error", 
-        description: "Please fill in all required fields (Name, Email, Phone, Position, Client, Skills, Recruiter)", 
+        description: "Please fix the highlighted errors.", 
         variant: "destructive" 
       });
       return;
@@ -198,7 +262,7 @@ export default function AdminCandidates() {
 
       toast({ title: "Success", description: `Candidate ${isEditMode ? 'Updated' : 'Added'}` });
       setIsDialogOpen(false);
-      fetchData(); // Refresh list
+      fetchData(); 
     } catch (error: any) {
       console.error(error);
       toast({ 
@@ -211,17 +275,23 @@ export default function AdminCandidates() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if(!confirm("Are you sure?")) return;
+  const handleToggleStatus = async (id: string, currentStatus: boolean) => {
     try {
-      await fetch(`${API_URL}/candidates/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeader()
+      const response = await fetch(`${API_URL}/candidates/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeader(),
+        body: JSON.stringify({ active: !currentStatus })
       });
-      toast({ title: "Deleted", description: "Candidate removed" });
+
+      if (!response.ok) throw new Error('Failed to update status');
+
+      toast({ 
+        title: "Success", 
+        description: `Candidate ${!currentStatus ? 'Activated' : 'Deactivated'} successfully` 
+      });
       fetchData();
     } catch (error) {
-      toast({ title: "Error", description: "Delete failed", variant: "destructive" });
+      toast({ title: "Error", description: "Update failed", variant: "destructive" });
     }
   };
 
@@ -232,10 +302,9 @@ export default function AdminCandidates() {
   };
 
   const handleExport = () => {
-    // Basic CSV implementation
-    const headers = ["ID", "Name", "Email", "Phone", "Position", "Client", "Status", "Recruiter"];
+    const headers = ["ID", "Name", "Email", "Phone", "Position", "Client", "Status", "Recruiter", "Active"];
     const rows = filteredCandidates.map(c => [
-      c.candidateId, c.name, c.email, c.contact, c.position, c.client, c.status, c.recruiterName
+      c.candidateId, c.name, c.email, c.contact, c.position, c.client, c.status, c.recruiterName, c.active ? 'Yes' : 'No'
     ]);
     const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].map(e => e.join(",")).join("\n");
     const encodedUri = encodeURI(csvContent);
@@ -253,16 +322,16 @@ export default function AdminCandidates() {
                           c.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           c.candidateId?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
-    // @ts-ignore - Handle recruiterId object or string mismatch
-    const matchesRecruiter = recruiterFilter === 'all' || c.recruiterId === recruiterFilter || c.recruiterId?._id === recruiterFilter;
+    const cRecruiterId = typeof c.recruiterId === 'object' ? (c.recruiterId as any)._id : c.recruiterId;
+    const matchesRecruiter = recruiterFilter === 'all' || cRecruiterId === recruiterFilter;
 
     return matchesSearch && matchesStatus && matchesRecruiter;
   });
 
   const getStatusVariant = (status: string) => {
-    if(['Joined', 'Offer'].includes(status)) return 'success'; // You might need to add success variant to badge or use className
+    if(['Joined', 'Offer'].includes(status)) return 'default';
     if(['Rejected'].includes(status)) return 'destructive';
-    return 'default';
+    return 'secondary';
   };
 
   const getInitials = (n: string) => n.split(' ').map(i => i[0]).join('').toUpperCase().substring(0,2);
@@ -321,8 +390,8 @@ export default function AdminCandidates() {
 
                 <Tabs value={viewMode} onValueChange={(v:any) => setViewMode(v)}>
                   <TabsList>
-                    <TabsTrigger value="table">Table</TabsTrigger>
-                    <TabsTrigger value="grid">Grid</TabsTrigger>
+                    <TabsTrigger value="table"><List className="h-4 w-4"/></TabsTrigger>
+                    <TabsTrigger value="grid"><LayoutGrid className="h-4 w-4"/></TabsTrigger>
                   </TabsList>
                 </Tabs>
               </div>
@@ -337,8 +406,7 @@ export default function AdminCandidates() {
                <Table>
                  <TableHeader>
                    <TableRow>
-                     {/* Added Sl.No Header */}
-                     <TableHead className="w-12">S.No</TableHead> 
+                     <TableHead className="w-12">S.No</TableHead>
                      <TableHead>ID</TableHead>
                      <TableHead>Candidate</TableHead>
                      <TableHead>Position</TableHead>
@@ -350,8 +418,7 @@ export default function AdminCandidates() {
                  </TableHeader>
                  <TableBody>
                    {filteredCandidates.map((c, index) => (
-                     <TableRow key={c.id}>
-                       {/* Added Sl.No Cell */}
+                     <TableRow key={c.id} className={c.active === false ? "opacity-60 bg-gray-50 dark:bg-gray-900" : ""}>
                        <TableCell className="text-muted-foreground">{index + 1}</TableCell>
                        <TableCell>
                          <div className="flex items-center gap-2">
@@ -367,6 +434,7 @@ export default function AdminCandidates() {
                            <div>
                              <div className="font-medium">{c.name}</div>
                              <div className="text-xs text-muted-foreground">{c.email}</div>
+                             {c.active === false && <span className="text-[10px] text-red-500 font-bold">INACTIVE</span>}
                            </div>
                          </div>
                        </TableCell>
@@ -378,10 +446,20 @@ export default function AdminCandidates() {
                           </div>
                        </TableCell>
                        <TableCell>{c.client}</TableCell>
-                       <TableCell><Badge variant="outline">{c.status}</Badge></TableCell>
+                       <TableCell><Badge variant={getStatusVariant(c.status)}>{c.status}</Badge></TableCell>
                        <TableCell className="text-right">
-                         <Button variant="ghost" size="icon" onClick={() => handleOpenEditDialog(c)}><Edit className="h-4 w-4"/></Button>
-                         <Button variant="ghost" size="icon" onClick={() => handleDelete(c.id)} className="text-red-500"><Trash2 className="h-4 w-4"/></Button>
+                         <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => handleOpenEditDialog(c)}><Edit className="h-4 w-4"/></Button>
+                            <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => handleToggleStatus(c._id || c.id!, c.active !== false)}
+                                className={c.active !== false ? "text-red-500 hover:text-red-600" : "text-green-500 hover:text-green-600"}
+                                title={c.active !== false ? "Deactivate" : "Activate"}
+                            >
+                                {c.active !== false ? <EyeOff className="h-4 w-4"/> : <Eye className="h-4 w-4"/>}
+                            </Button>
+                         </div>
                        </TableCell>
                      </TableRow>
                    ))}
@@ -392,7 +470,7 @@ export default function AdminCandidates() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredCandidates.map((c, index) => (
-                <Card key={c.id} className="p-6 hover:shadow-lg transition-all">
+                <Card key={c.id} className={`p-6 hover:shadow-lg transition-all ${c.active === false ? 'opacity-75 bg-gray-50 border-dashed' : ''}`}>
                    <div className="flex justify-between items-start mb-4">
                       <div className="flex gap-3">
                         <span className="text-sm text-gray-500 font-mono">#{index + 1}</span>
@@ -400,6 +478,7 @@ export default function AdminCandidates() {
                         <div>
                           <div className="font-bold">{c.name}</div>
                           <div className="text-sm text-muted-foreground">{c.position}</div>
+                          {c.active === false && <span className="text-[10px] text-red-500 font-bold bg-red-50 px-1 rounded">INACTIVE</span>}
                         </div>
                       </div>
                       <Badge>{c.status}</Badge>
@@ -412,7 +491,14 @@ export default function AdminCandidates() {
                    </div>
                    <div className="flex justify-end gap-2 border-t pt-4">
                       <Button variant="ghost" size="sm" onClick={() => handleOpenEditDialog(c)}><Edit className="h-4 w-4 mr-1"/> Edit</Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDelete(c.id)} className="text-red-500"><Trash2 className="h-4 w-4 mr-1"/> Delete</Button>
+                      <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleToggleStatus(c._id || c.id!, c.active !== false)}
+                          className={c.active !== false ? "text-red-500 hover:text-red-600" : "text-green-500 hover:text-green-600"}
+                      >
+                          {c.active !== false ? <><EyeOff className="h-4 w-4 mr-1"/> Deactivate</> : <><Eye className="h-4 w-4 mr-1"/> Activate</>}
+                      </Button>
                    </div>
                 </Card>
               ))}
@@ -433,35 +519,70 @@ export default function AdminCandidates() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                {/* Basic Info */}
                <div className="space-y-2">
-                 <Label>Full Name *</Label>
-                 <Input value={formData.name} onChange={e => handleInputChange('name', e.target.value)} />
+                 <Label className={errors.name ? "text-red-500" : ""}>Full Name *</Label>
+                 <Input 
+                    value={formData.name} 
+                    onChange={e => handleInputChange('name', e.target.value)} 
+                    className={errors.name ? "border-red-500" : ""}
+                 />
+                 {errors.name && <span className="text-xs text-red-500">{errors.name}</span>}
                </div>
+
                <div className="space-y-2">
-                 <Label>Email *</Label>
-                 <Input value={formData.email} onChange={e => handleInputChange('email', e.target.value)} />
+                 <Label className={errors.email ? "text-red-500" : ""}>Email *</Label>
+                 <Input 
+                    value={formData.email} 
+                    onChange={e => handleInputChange('email', e.target.value)} 
+                    className={errors.email ? "border-red-500" : ""}
+                 />
+                 {errors.email && <span className="text-xs text-red-500">{errors.email}</span>}
                </div>
+
                <div className="space-y-2">
-                 <Label>Phone *</Label>
-                 <Input value={formData.contact} onChange={e => handleInputChange('contact', e.target.value)} />
+                 <Label className={errors.contact ? "text-red-500" : ""}>Phone *</Label>
+                 <Input 
+                    value={formData.contact} 
+                    onChange={e => handleInputChange('contact', e.target.value)} 
+                    className={errors.contact ? "border-red-500" : ""}
+                 />
+                 {errors.contact && <span className="text-xs text-red-500">{errors.contact}</span>}
                </div>
+
                <div className="space-y-2">
-                 <Label>Position *</Label>
-                 <Input value={formData.position} onChange={e => handleInputChange('position', e.target.value)} />
+                 <Label className={errors.position ? "text-red-500" : ""}>Position *</Label>
+                 <Input 
+                    value={formData.position} 
+                    onChange={e => handleInputChange('position', e.target.value)} 
+                    className={errors.position ? "border-red-500" : ""}
+                 />
+                 {errors.position && <span className="text-xs text-red-500">{errors.position}</span>}
                </div>
+
                <div className="space-y-2">
-                 <Label>Client *</Label>
-                 <Input value={formData.client} onChange={e => handleInputChange('client', e.target.value)} />
+                 <Label className={errors.client ? "text-red-500" : ""}>Client *</Label>
+                 <Input 
+                    value={formData.client} 
+                    onChange={e => handleInputChange('client', e.target.value)} 
+                    className={errors.client ? "border-red-500" : ""}
+                 />
+                 {errors.client && <span className="text-xs text-red-500">{errors.client}</span>}
                </div>
+
                <div className="space-y-2">
-                 <Label>Skills * (comma separated)</Label>
-                 <Input value={formData.skills} onChange={e => handleInputChange('skills', e.target.value)} />
+                 <Label className={errors.skills ? "text-red-500" : ""}>Skills * (comma separated)</Label>
+                 <Input 
+                    value={formData.skills} 
+                    onChange={e => handleInputChange('skills', e.target.value)} 
+                    className={errors.skills ? "border-red-500" : ""}
+                 />
+                 {errors.skills && <span className="text-xs text-red-500">{errors.skills}</span>}
                </div>
 
                {/* Admin Assignment */}
                <div className="space-y-2">
-                 <Label className="text-blue-600">Assign Recruiter *</Label>
+                 <Label className={errors.recruiterId ? "text-red-500" : "text-blue-600"}>Assign Recruiter *</Label>
                  <Select value={formData.recruiterId} onValueChange={(val) => handleInputChange('recruiterId', val)}>
-                    <SelectTrigger><SelectValue placeholder="Select Recruiter"/></SelectTrigger>
+                    <SelectTrigger className={errors.recruiterId ? "border-red-500" : ""}><SelectValue placeholder="Select Recruiter"/></SelectTrigger>
                     <SelectContent>
                       {recruiters.map(r => (
                         // @ts-ignore
@@ -469,6 +590,7 @@ export default function AdminCandidates() {
                       ))}
                     </SelectContent>
                  </Select>
+                 {errors.recruiterId && <span className="text-xs text-red-500">{errors.recruiterId}</span>}
                </div>
 
                <div className="space-y-2">
@@ -487,10 +609,43 @@ export default function AdminCandidates() {
                </div>
                
                {/* Experience */}
-               <div className="space-y-2"><Label>Total Exp</Label><Input value={formData.totalExperience} onChange={e => handleInputChange('totalExperience', e.target.value)}/></div>
-               <div className="space-y-2"><Label>Current CTC</Label><Input value={formData.ctc} onChange={e => handleInputChange('ctc', e.target.value)}/></div>
-               <div className="space-y-2"><Label>Expected CTC</Label><Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)}/></div>
-               <div className="space-y-2"><Label>Notice Period</Label><Input value={formData.noticePeriod} onChange={e => handleInputChange('noticePeriod', e.target.value)}/></div>
+               <div className="space-y-2">
+                  <Label className={errors.totalExperience ? "text-red-500" : ""}>Total Exp (Yrs)</Label>
+                  <Input 
+                    value={formData.totalExperience} 
+                    onChange={e => handleInputChange('totalExperience', e.target.value)}
+                    className={errors.totalExperience ? "border-red-500" : ""}
+                  />
+                  {errors.totalExperience && <span className="text-xs text-red-500">{errors.totalExperience}</span>}
+               </div>
+               
+               <div className="space-y-2">
+                  <Label className={errors.ctc ? "text-red-500" : ""}>Current CTC</Label>
+                  <Input 
+                    value={formData.ctc} 
+                    onChange={e => handleInputChange('ctc', e.target.value)}
+                    className={errors.ctc ? "border-red-500" : ""}
+                  />
+                  {errors.ctc && <span className="text-xs text-red-500">{errors.ctc}</span>}
+               </div>
+               
+               <div className="space-y-2">
+                  <Label className={errors.ectc ? "text-red-500" : ""}>Expected CTC</Label>
+                  <Input 
+                    value={formData.ectc} 
+                    onChange={e => handleInputChange('ectc', e.target.value)}
+                    className={errors.ectc ? "border-red-500" : ""}
+                  />
+                  {errors.ectc && <span className="text-xs text-red-500">{errors.ectc}</span>}
+               </div>
+               
+               <div className="space-y-2">
+                  <Label className={errors.noticePeriod ? "text-red-500" : ""}>Notice Period</Label>
+                  <Input 
+                    value={formData.noticePeriod} 
+                    onChange={e => handleInputChange('noticePeriod', e.target.value)}
+                  />
+               </div>
 
                <div className="col-span-1 md:col-span-2 space-y-2">
                   <Label>Notes</Label>

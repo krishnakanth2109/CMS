@@ -1,0 +1,147 @@
+{
+   "groups":[
+      {
+         "groupName":"general_intents",
+         "groupId":"smg-generated-001",
+         "nodes":[
+            {
+               "userUtterances":[
+                  { "text":"!n ~no" }
+               ],
+               "botUtterances":[
+                  {
+                     "channel":"default",
+                     "text":"Alright.",
+                     "type":"basic",
+                     "_id":"mt-gen-no-1"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Okay.",
+                     "type":"basic",
+                     "_id":"mt-gen-no-2"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Sure, no problem.",
+                     "type":"basic",
+                     "_id":"mt-gen-no-3"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Alright then.",
+                     "type":"basic",
+                     "_id":"mt-gen-no-4"
+                  }
+               ],
+               "refId":"ref-gen-no",
+               "seq":0,
+               "nodeId":"smn-gen-no"
+            },
+            {
+               "userUtterances":[
+                  { "text":"~ibedone" }
+               ],
+               "botUtterances":[
+                  {
+                     "channel":"default",
+                     "text":"Right, then.",
+                     "type":"basic",
+                     "_id":"mt-gen-done-1"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Alright.",
+                     "type":"basic",
+                     "_id":"mt-gen-done-2"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Great! Let me know if you need anything else.",
+                     "type":"basic",
+                     "_id":"mt-gen-done-3"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Noted. I'm here if you need more help.",
+                     "type":"basic",
+                     "_id":"mt-gen-done-4"
+                  }
+               ],
+               "refId":"ref-gen-done",
+               "seq":1,
+               "nodeId":"smn-gen-done"
+            },
+            {
+               "userUtterances":[
+                  { "text":"~emogoodbye" }
+               ],
+               "botUtterances":[
+                  {
+                     "channel":"default",
+                     "text":"OK, bye for now!",
+                     "type":"basic",
+                     "_id":"mt-gen-bye-1"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Have a good one!",
+                     "type":"basic",
+                     "_id":"mt-gen-bye-2"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Goodbye! Feel free to return anytime.",
+                     "type":"basic",
+                     "_id":"mt-gen-bye-3"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Take care, see you later.",
+                     "type":"basic",
+                     "_id":"mt-gen-bye-4"
+                  }
+               ],
+               "refId":"ref-gen-bye",
+               "seq":2,
+               "nodeId":"smn-gen-bye"
+            },
+            {
+               "userUtterances":[
+                  { "text":"thanks" },
+                  { "text":"thank ~you" }
+               ],
+               "botUtterances":[
+                  {
+                     "channel":"default",
+                     "text":"You're welcome.",
+                     "type":"basic",
+                     "_id":"mt-gen-thanks-1"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Happy to help!",
+                     "type":"basic",
+                     "_id":"mt-gen-thanks-2"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Anytime! Let me know if you need anything else.",
+                     "type":"basic",
+                     "_id":"mt-gen-thanks-3"
+                  },
+                  {
+                     "channel":"default",
+                     "text":"Glad I could assist.",
+                     "type":"basic",
+                     "_id":"mt-gen-thanks-4"
+                  }
+               ],
+               "refId":"ref-gen-thanks",
+               "seq":3,
+               "nodeId":"smn-gen-thanks"
+            }
+         ]
+      }
+   ]
+}

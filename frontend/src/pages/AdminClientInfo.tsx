@@ -1,14 +1,13 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { DashboardSidebar } from "@/components/DashboardSidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast"; 
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  BuildingOfficeIcon, UserIcon, EnvelopeIcon, PhoneIcon, GlobeAltIcon, MapPinIcon, LinkIcon, EyeIcon, PencilIcon, PlusIcon, MagnifyingGlassIcon, XMarkIcon, ClipboardDocumentListIcon, CalendarDaysIcon, DocumentTextIcon, PercentBadgeIcon, ExclamationTriangleIcon, CheckCircleIcon, NoSymbolIcon, ListBulletIcon, Squares2X2Icon, ArrowRightIcon, IdentificationIcon, ArrowDownTrayIcon,
+  BuildingOfficeIcon, UserIcon, MagnifyingGlassIcon, XMarkIcon, EyeIcon, PencilIcon, PlusIcon, CheckCircleIcon, NoSymbolIcon,
 } from "@heroicons/react/24/outline";
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -81,6 +80,7 @@ const ClientDetailCard: React.FC<{ client: Client; onClose: () => void }> = ({ c
                      <p><span className="font-medium">Email:</span> {client.email}</p>
                      <p><span className="font-medium">Phone:</span> {client.phone || 'N/A'}</p>
                      <p><span className="font-medium">Address:</span> {client.address || 'N/A'}</p>
+                     <p><span className="font-medium">Website:</span> {client.website || 'N/A'}</p>
                    </div>
                 </div>
                 <div>
@@ -132,19 +132,19 @@ const AdminClientInfo: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [form, setForm] = useState<ClientForm>({
+  const initialFormState: ClientForm = {
     companyName: "", contactPerson: "", email: "", phone: "", website: "", address: "",
     locationLink: "", industry: "", gstNumber: "", notes: "", clientId: "",
     percentage: "", candidatePeriod: "", replacementPeriod: "", terms: "", active: true,
-  });
+  };
 
+  const [form, setForm] = useState<ClientForm>(initialFormState);
   const [errors, setErrors] = useState<Record<string, string>>({}); // Error state
 
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [industryFilter, setIndustryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
@@ -171,87 +171,76 @@ const AdminClientInfo: React.FC = () => {
     fetchClients();
   }, []);
 
-  // VALIDATION LOGIC
-  const validateField = (name: string, value: string) => {
-    let error = "";
+  // --- COMPREHENSIVE VALIDATION LOGIC ---
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
     
-    if (name === 'companyName' || name === 'contactPerson') {
-      // Allow only letters and spaces
-      if (/[^a-zA-Z\s]/.test(value)) {
-        error = "Only alphabets allowed";
-      }
-    }
+    // 1. Required Text Fields
+    if (!form.companyName.trim()) newErrors.companyName = "Company Name is required";
+    else if (form.companyName.length < 2) newErrors.companyName = "Name too short";
     
-    if (name === 'phone') {
-      // Allow only numbers
-      if (/[^0-9]/.test(value)) {
-        error = "Only numbers allowed";
-      } else if (value.length > 10) {
-        error = "Max 10 digits allowed";
-      }
+    if (!form.contactPerson.trim()) newErrors.contactPerson = "Contact Person is required";
+    else if (/[^a-zA-Z\s]/.test(form.contactPerson)) newErrors.contactPerson = "Only letters allowed";
+
+    // 2. Email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!form.email.trim()) newErrors.email = "Email is required";
+    else if (!emailRegex.test(form.email)) newErrors.email = "Invalid email format";
+
+    // 3. Phone (10 digits)
+    const phoneRegex = /^[0-9]{10}$/;
+    if (!form.phone.trim()) newErrors.phone = "Phone is required";
+    else if (!phoneRegex.test(form.phone)) newErrors.phone = "Must be exactly 10 digits";
+
+    // 4. Website (Optional but format check)
+    const urlRegex = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
+    if (form.website && !urlRegex.test(form.website)) newErrors.website = "Invalid URL";
+
+    // 5. Numeric Fields
+    if (form.percentage) {
+      const val = parseFloat(form.percentage);
+      if (isNaN(val) || val < 0 || val > 100) newErrors.percentage = "Must be 0-100";
     }
 
-    if (name === 'percentage' || name === 'candidatePeriod' || name === 'replacementPeriod') {
-      if (value && /[^0-9]/.test(value)) {
-        error = "Only numbers allowed";
-      }
-      // Check percentage range
-      if (name === 'percentage' && value && (parseInt(value) < 0 || parseInt(value) > 100)) {
-        error = "Must be 0-100";
-      }
+    if (form.candidatePeriod && isNaN(parseInt(form.candidatePeriod))) newErrors.candidatePeriod = "Number required";
+    if (form.replacementPeriod && isNaN(parseInt(form.replacementPeriod))) newErrors.replacementPeriod = "Number required";
+
+    // 6. GST (Optional, basic alphanumeric check)
+    if (form.gstNumber && !/^[0-9a-zA-Z]{15}$/.test(form.gstNumber)) {
+        newErrors.gstNumber = "GST usually 15 alphanumeric chars";
     }
 
-    if (name === 'email') {
-        // Basic email regex
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (value && !emailRegex.test(value)) {
-            error = "Invalid email format";
-        }
-    }
-
-    setErrors(prev => ({ ...prev, [name]: error }));
-    return error === "";
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     
-    // Input filtering for Company Name & Contact Person (prevent numbers being typed)
-    if ((name === 'companyName' || name === 'contactPerson') && /[^a-zA-Z\s]/.test(value)) {
-      return; // Ignore input if not alphabet/space
-    }
+    // Strict Input Masks
+    if ((name === 'contactPerson') && /[^a-zA-Z\s]/.test(value)) return;
+    if ((name === 'phone' || name === 'candidatePeriod' || name === 'replacementPeriod') && /[^0-9]/.test(value)) return;
+    if ((name === 'percentage') && /[^0-9.]/.test(value)) return;
+    if (name === 'phone' && value.length > 10) return;
 
-    // Input filtering for Phone & Numeric Fields
-    if ((name === 'phone' || name === 'percentage' || name === 'candidatePeriod' || name === 'replacementPeriod') && /[^0-9]/.test(value)) {
-      return; // Ignore non-numeric input
-    }
-
-    if (name === 'phone' && value.length > 10) {
-      return; // Limit phone to 10
-    }
-
-    validateField(name, value); // Trigger validation message
-    
     setForm({ 
       ...form, 
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value 
     });
+
+    // Clear error on type
+    if (errors[name]) {
+      setErrors(prev => {
+        const newErrs = { ...prev };
+        delete newErrs[name];
+        return newErrs;
+      });
+    }
   };
 
   const handleSubmit = async () => {
-    // Final validation check
-    const nameValid = validateField('companyName', form.companyName);
-    const personValid = validateField('contactPerson', form.contactPerson);
-    const emailValid = validateField('email', form.email);
-    const phoneValid = validateField('phone', form.phone);
-
-    if (!form.companyName || !form.contactPerson || !form.email) {
-      toast({ title: "Validation Error", description: "Required fields missing", variant: "destructive" });
-      return;
-    }
-
-    if (!nameValid || !personValid || !emailValid || !phoneValid || Object.values(errors).some(x => x !== "")) {
-        toast({ title: "Validation Error", description: "Please fix errors in the form", variant: "destructive" });
+    if (!validateForm()) {
+        toast({ title: "Validation Error", description: "Please fix the highlighted errors", variant: "destructive" });
         return;
     }
 
@@ -272,12 +261,8 @@ const AdminClientInfo: React.FC = () => {
       setEditingClient(null);
       setErrors({});
       fetchClients();
-      
-      setForm({
-        companyName: "", contactPerson: "", email: "", phone: "", website: "", address: "",
-        locationLink: "", industry: "", gstNumber: "", notes: "", clientId: "",
-        percentage: "", candidatePeriod: "", replacementPeriod: "", terms: "", active: true,
-      });
+      setForm(initialFormState);
+
     } catch (error) {
       toast({ title: "Error", description: "Could not save client", variant: "destructive" });
     }
@@ -347,7 +332,7 @@ const AdminClientInfo: React.FC = () => {
               <h1 className="text-3xl font-bold">Client Information</h1>
               <p className="text-gray-500">Manage client companies</p>
             </div>
-            <Button onClick={() => { setEditingClient(null); setShowForm(!showForm); setErrors({}); }} className="bg-purple-600 hover:bg-purple-700">
+            <Button onClick={() => { setEditingClient(null); setShowForm(!showForm); setErrors({}); setForm(initialFormState); }} className="bg-purple-600 hover:bg-purple-700">
               <PlusIcon className="w-4 h-4 mr-2" /> {showForm ? "Cancel" : "Add Client"}
             </Button>
           </div>
@@ -377,7 +362,7 @@ const AdminClientInfo: React.FC = () => {
           <AnimatePresence>
             {showForm && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
-                <Card className="mb-6">
+                <Card className="mb-6 border-l-4 border-purple-500">
                   <CardHeader><CardTitle>{editingClient ? "Edit Client" : "Add Client"}</CardTitle></CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -401,7 +386,7 @@ const AdminClientInfo: React.FC = () => {
 
                       {/* Phone */}
                       <div>
-                          <Input name="phone" placeholder="Phone (10 digits)" value={form.phone} onChange={handleChange} maxLength={10} className={errors.phone ? "border-red-500" : ""} />
+                          <Input name="phone" placeholder="Phone (10 digits) *" value={form.phone} onChange={handleChange} maxLength={10} className={errors.phone ? "border-red-500" : ""} />
                           {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
                       </div>
 
@@ -425,11 +410,23 @@ const AdminClientInfo: React.FC = () => {
                           {errors.replacementPeriod && <p className="text-xs text-red-500 mt-1">{errors.replacementPeriod}</p>}
                       </div>
 
-                      <Input name="gstNumber" placeholder="GST Number" value={form.gstNumber} onChange={handleChange} />
+                      {/* GST */}
+                      <div>
+                          <Input name="gstNumber" placeholder="GST Number" value={form.gstNumber} onChange={handleChange} className={errors.gstNumber ? "border-red-500" : ""} />
+                          {errors.gstNumber && <p className="text-xs text-red-500 mt-1">{errors.gstNumber}</p>}
+                      </div>
+
+                      {/* Website */}
+                      <div>
+                          <Input name="website" placeholder="Website URL" value={form.website} onChange={handleChange} className={errors.website ? "border-red-500" : ""} />
+                          {errors.website && <p className="text-xs text-red-500 mt-1">{errors.website}</p>}
+                      </div>
+
+                      <Input name="address" placeholder="Full Address" value={form.address} onChange={handleChange} className="md:col-span-2" />
                       <Input name="clientId" placeholder="Custom ID (Optional)" value={form.clientId} onChange={handleChange} />
                     </div>
                     <div className="mt-4 flex justify-end">
-                      <Button onClick={handleSubmit} disabled={Object.values(errors).some(e => e !== "")}>{editingClient ? "Update" : "Save"}</Button>
+                      <Button onClick={handleSubmit}>{editingClient ? "Update Client" : "Save Client"}</Button>
                     </div>
                   </CardContent>
                 </Card>

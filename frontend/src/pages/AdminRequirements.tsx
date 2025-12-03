@@ -1,15 +1,13 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { DashboardSidebar } from "@/components/DashboardSidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-// FIXED: Imported useToast hook instead of direct toast function
 import { useToast } from "@/hooks/use-toast"; 
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  BriefcaseIcon, ClipboardDocumentListIcon, UserIcon, MapPinIcon, CurrencyDollarIcon, LinkIcon, MagnifyingGlassIcon, XMarkIcon, BuildingOfficeIcon, CodeBracketIcon, CalendarDaysIcon, EyeIcon, PencilIcon, PlusIcon, UsersIcon, CheckCircleIcon, NoSymbolIcon,
+  XMarkIcon, EyeIcon, PencilIcon, PlusIcon, CheckCircleIcon, NoSymbolIcon,
 } from "@heroicons/react/24/outline";
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -84,7 +82,7 @@ const JobDetailCard: React.FC<{ job: Job; onClose: () => void }> = ({ job, onClo
              </div>
              <div className="col-span-2 bg-gray-50 p-3 rounded">
                 <h4 className="font-bold text-sm">Link</h4>
-                <a href={job.jdLink} target="_blank" className="text-blue-600 break-all">{job.jdLink}</a>
+                <a href={job.jdLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 break-all">{job.jdLink}</a>
              </div>
           </div>
         </motion.div>
@@ -101,11 +99,14 @@ const AdminRequirements: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   // Form State
-  const [form, setForm] = useState<Partial<Job>>({
+  const initialFormState: Partial<Job> = {
     jobCode: "", clientName: "", position: "", skills: "", salaryBudget: "", location: "",
     experience: "", gender: "", interviewMode: "", tatTime: "", jdLink: "", comments: "",
     primaryRecruiter: "", secondaryRecruiter: "", active: true,
-  });
+  };
+
+  const [form, setForm] = useState<Partial<Job>>(initialFormState);
+  const [errors, setErrors] = useState<Record<string, string>>({}); // Validation Errors
 
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
@@ -148,17 +149,48 @@ const AdminRequirements: React.FC = () => {
 
   useEffect(() => { fetchData(); }, []);
 
+  // --- VALIDATION LOGIC ---
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    if (!form.jobCode?.trim()) newErrors.jobCode = "Job Code is required";
+    if (!form.clientName) newErrors.clientName = "Please select a client";
+    if (!form.position?.trim()) newErrors.position = "Position is required";
+    if (!form.location?.trim()) newErrors.location = "Location is required";
+    if (!form.experience?.trim()) newErrors.experience = "Experience required";
+    if (!form.salaryBudget?.trim()) newErrors.salaryBudget = "Budget required";
+    if (!form.skills?.trim()) newErrors.skills = "Skills required";
+    if (!form.tatTime) newErrors.tatTime = "TAT Date required";
+    
+    // Optional link validation
+    if (form.jdLink && !/^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/.test(form.jdLink)) {
+        newErrors.jdLink = "Invalid URL format";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     setForm({ 
       ...form, 
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value 
     });
+
+    // Clear error
+    if (errors[name]) {
+        setErrors(prev => {
+            const n = { ...prev };
+            delete n[name];
+            return n;
+        });
+    }
   };
 
   const handleSubmit = async () => {
-    if (!form.clientName || !form.position || !form.jobCode) {
-      toast({ title: "Validation Error", description: "Required fields missing", variant: "destructive" });
+    if (!validateForm()) {
+      toast({ title: "Validation Error", description: "Required fields missing or invalid", variant: "destructive" });
       return;
     }
 
@@ -177,11 +209,8 @@ const AdminRequirements: React.FC = () => {
       toast({ title: "Success", description: "Job requirement saved" });
       setShowForm(false);
       setEditingJob(null);
-      setForm({
-        jobCode: "", clientName: "", position: "", skills: "", salaryBudget: "", location: "",
-        experience: "", gender: "", interviewMode: "", tatTime: "", jdLink: "", comments: "",
-        primaryRecruiter: "", secondaryRecruiter: "", active: true,
-      });
+      setErrors({});
+      setForm(initialFormState);
       fetchData();
     } catch (error) {
       toast({ title: "Error", variant: "destructive" });
@@ -190,6 +219,7 @@ const AdminRequirements: React.FC = () => {
 
   const handleEditJob = (job: Job) => {
     setEditingJob(job);
+    setErrors({});
     setForm({
       ...job,
       tatTime: job.tatTime ? new Date(job.tatTime).toISOString().split('T')[0] : ""
@@ -219,7 +249,7 @@ const AdminRequirements: React.FC = () => {
           {/* Header */}
           <div className="flex justify-between items-center">
             <h1 className="text-3xl font-bold">Job Requirements</h1>
-            <Button onClick={() => setShowForm(!showForm)} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={() => { setShowForm(!showForm); setErrors({}); setForm(initialFormState); }} className="bg-blue-600 hover:bg-blue-700">
               <PlusIcon className="w-4 h-4 mr-2" /> {showForm ? "Cancel" : "Add Requirement"}
             </Button>
           </div>
@@ -228,30 +258,76 @@ const AdminRequirements: React.FC = () => {
           <AnimatePresence>
             {showForm && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
-                <Card className="mb-6">
+                <Card className="mb-6 border-l-4 border-blue-500">
                   <CardHeader><CardTitle>{editingJob ? "Edit" : "Add"} Requirement</CardTitle></CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <Input name="jobCode" placeholder="Job Code *" value={form.jobCode} onChange={handleChange} />
-                      <select name="clientName" value={form.clientName} onChange={handleChange} className="border rounded p-2">
-                        <option value="">Select Client *</option>
-                        {clients.map(c => <option key={c.id} value={c.companyName}>{c.companyName}</option>)}
-                      </select>
-                      <Input name="position" placeholder="Position *" value={form.position} onChange={handleChange} />
-                      <Input name="location" placeholder="Location" value={form.location} onChange={handleChange} />
-                      <Input name="experience" placeholder="Experience" value={form.experience} onChange={handleChange} />
-                      <Input name="salaryBudget" placeholder="Budget" value={form.salaryBudget} onChange={handleChange} />
-                      <Input name="tatTime" type="date" placeholder="TAT" value={form.tatTime} onChange={handleChange} />
-                      <select name="primaryRecruiter" value={form.primaryRecruiter} onChange={handleChange} className="border rounded p-2">
+                      {/* Job Code */}
+                      <div>
+                          <Input name="jobCode" placeholder="Job Code *" value={form.jobCode} onChange={handleChange} className={errors.jobCode ? "border-red-500" : ""} />
+                          {errors.jobCode && <p className="text-xs text-red-500 mt-1">{errors.jobCode}</p>}
+                      </div>
+
+                      {/* Client Select */}
+                      <div>
+                          <select name="clientName" value={form.clientName} onChange={handleChange} className={`w-full border rounded p-2 text-sm bg-transparent ${errors.clientName ? "border-red-500" : ""}`}>
+                            <option value="">Select Client *</option>
+                            {clients.map(c => <option key={c.id} value={c.companyName}>{c.companyName}</option>)}
+                          </select>
+                          {errors.clientName && <p className="text-xs text-red-500 mt-1">{errors.clientName}</p>}
+                      </div>
+
+                      {/* Position */}
+                      <div>
+                          <Input name="position" placeholder="Position *" value={form.position} onChange={handleChange} className={errors.position ? "border-red-500" : ""} />
+                          {errors.position && <p className="text-xs text-red-500 mt-1">{errors.position}</p>}
+                      </div>
+
+                      {/* Location */}
+                      <div>
+                          <Input name="location" placeholder="Location *" value={form.location} onChange={handleChange} className={errors.location ? "border-red-500" : ""} />
+                          {errors.location && <p className="text-xs text-red-500 mt-1">{errors.location}</p>}
+                      </div>
+
+                      {/* Experience */}
+                      <div>
+                          <Input name="experience" placeholder="Experience *" value={form.experience} onChange={handleChange} className={errors.experience ? "border-red-500" : ""} />
+                          {errors.experience && <p className="text-xs text-red-500 mt-1">{errors.experience}</p>}
+                      </div>
+
+                      {/* Budget */}
+                      <div>
+                          <Input name="salaryBudget" placeholder="Budget *" value={form.salaryBudget} onChange={handleChange} className={errors.salaryBudget ? "border-red-500" : ""} />
+                          {errors.salaryBudget && <p className="text-xs text-red-500 mt-1">{errors.salaryBudget}</p>}
+                      </div>
+
+                      {/* TAT Date */}
+                      <div>
+                          <Input name="tatTime" type="date" placeholder="TAT *" value={form.tatTime} onChange={handleChange} className={errors.tatTime ? "border-red-500" : ""} />
+                          {errors.tatTime && <p className="text-xs text-red-500 mt-1">{errors.tatTime}</p>}
+                      </div>
+
+                      <select name="primaryRecruiter" value={form.primaryRecruiter} onChange={handleChange} className="border rounded p-2 text-sm bg-transparent">
                         <option value="">Primary Recruiter</option>
                         {recruiters.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
                       </select>
-                      <select name="secondaryRecruiter" value={form.secondaryRecruiter} onChange={handleChange} className="border rounded p-2">
+
+                      <select name="secondaryRecruiter" value={form.secondaryRecruiter} onChange={handleChange} className="border rounded p-2 text-sm bg-transparent">
                         <option value="">Secondary Recruiter</option>
                         {recruiters.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
                       </select>
-                      <Input name="skills" placeholder="Skills" className="col-span-3" value={form.skills} onChange={handleChange} />
-                      <Input name="jdLink" placeholder="JD Link" className="col-span-3" value={form.jdLink} onChange={handleChange} />
+
+                      {/* Skills */}
+                      <div className="col-span-1 md:col-span-3">
+                          <Input name="skills" placeholder="Skills *" value={form.skills} onChange={handleChange} className={errors.skills ? "border-red-500" : ""} />
+                          {errors.skills && <p className="text-xs text-red-500 mt-1">{errors.skills}</p>}
+                      </div>
+
+                      {/* JD Link */}
+                      <div className="col-span-1 md:col-span-3">
+                          <Input name="jdLink" placeholder="JD Link (Optional)" value={form.jdLink} onChange={handleChange} className={errors.jdLink ? "border-red-500" : ""} />
+                          {errors.jdLink && <p className="text-xs text-red-500 mt-1">{errors.jdLink}</p>}
+                      </div>
                     </div>
                     <div className="flex justify-end mt-4">
                       <Button onClick={handleSubmit}>{editingJob ? "Update" : "Save"}</Button>
