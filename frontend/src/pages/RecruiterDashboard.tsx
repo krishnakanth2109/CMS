@@ -571,12 +571,6 @@ export default function RecruiterDashboard() {
 
           {/* Pipeline Breakdown - Second Row (Status Specific) */}
           <div className="grid gap-3 md:gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-<<<<<<< HEAD
-            <ProfessionalStatCard title="Selected" value={candidateStats.selected} icon={ClipboardList} onClick={handleNavigateToCandidates} borderColor="border-blue-200 dark:border-blue-800" iconColor="text-blue-600 dark:text-blue-400" />
-            <ProfessionalStatCard title="Rejected" value={candidateStats.rejected} icon={Calendar} onClick={handleNavigateToSchedules} borderColor="border-indigo-200 dark:border-indigo-800" iconColor="text-indigo-600 dark:text-indigo-400" />
-            <ProfessionalStatCard title="Hold" value={candidateStats.hold} icon={Briefcase} onClick={handleNavigateToCandidates} borderColor="border-green-200 dark:border-green-800" iconColor="text-green-600 dark:text-green-400" />
-            <ProfessionalStatCard title="Joined" value={candidateStats.joined} icon={UserCheck} onClick={handleNavigateToCandidates} borderColor="border-emerald-200 dark:border-emerald-800" iconColor="text-emerald-600 dark:text-emerald-400" />
-=======
             <ProfessionalStatCard 
               title="Submitted" 
               value={candidateStats.submitted} 
@@ -613,7 +607,6 @@ export default function RecruiterDashboard() {
               borderColor="border-emerald-200 dark:border-emerald-800" 
               iconColor="text-emerald-600 dark:text-emerald-400" 
             />
->>>>>>> f654f80e25fc9c192d2dfa3e87e110b80f75d937
           </div>
 
           {/* Charts */}

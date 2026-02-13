@@ -483,22 +483,6 @@ export default function RecruiterCandidates() {
               </Button>
             </div>
           </div>
-<<<<<<< HEAD
-          
-          {/* --- UPDATED STAT CARDS GRID (5x2 Layout) --- */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            <StatCard title="Total Submitted" value={stats.total} color="blue" active={activeStatFilter === null} onClick={() => setActiveStatFilter(null)} />
-            <StatCard title="Turnups" value={stats.turnups} color="green" active={activeStatFilter === 'turnups'} onClick={() => setActiveStatFilter('turnups')} />
-            <StatCard title="No show" value={0} color="slate" active={activeStatFilter === 'noshow'} onClick={() => setActiveStatFilter('noshow')} />
-            <StatCard title="Yet to attend" value={stats.submitted} color="purple" active={activeStatFilter === 'yet_to_attend'} onClick={() => setActiveStatFilter('yet_to_attend')} />
-            <StatCard title="Selected" value={stats.selected} color="green" active={activeStatFilter === 'selected'} onClick={() => setActiveStatFilter('selected')} />
-            
-            <StatCard title="Rejected" value={stats.rejected} color="red" active={activeStatFilter === 'rejected'} onClick={() => setActiveStatFilter('rejected')} />
-            <StatCard title="Hold" value={0} color="orange" active={activeStatFilter === 'hold'} onClick={() => setActiveStatFilter('hold')} />
-            <StatCard title="Joinings" value={stats.joined} color="green" active={activeStatFilter === 'joinings'} onClick={() => setActiveStatFilter('joinings')} />
-            <StatCard title="Backout" value={0} color="red" active={activeStatFilter === 'backout'} onClick={() => setActiveStatFilter('backout')} />
-            <StatCard title="Shared Profiles" value={stats.total} color="teal" active={activeStatFilter === 'shared'} onClick={() => setActiveStatFilter('shared')} />
-=======
 
           {/* --- 3. UPDATED: Stats Grid with Correct Data Mapping --- */}
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
@@ -572,7 +556,6 @@ export default function RecruiterCandidates() {
               active={activeStatFilter === 'Shared Profiles'} 
               onClick={() => setActiveStatFilter('Shared Profiles')} 
             />
->>>>>>> f654f80e25fc9c192d2dfa3e87e110b80f75d937
           </div>
 
 
