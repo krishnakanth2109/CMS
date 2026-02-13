@@ -28,6 +28,7 @@ import { Candidate, Job } from '@/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+// --- Interfaces ---
 interface BackendCandidate extends Candidate {
   _id: string;
   candidateId?: string;
@@ -50,8 +51,6 @@ interface BackendCandidate extends Candidate {
   rejectionReason?: string;
   recruiterId?: string | { _id: string, name: string };
   recruiterName?: string;
-  
-  // New Fields
   offersInHand?: boolean;
   offerPackage?: string;
   servingNoticePeriod?: boolean;
@@ -77,14 +76,11 @@ interface CandidateFormData {
   totalExperience: string; relevantExperience: string;
   education: string;
   ctc: string; ectc: string; 
-  
-  // Notice Period & Offers
-  noticePeriod: string; // Legacy text field
-  servingNoticePeriod: string; // 'true' | 'false' for Select
+  noticePeriod: string;
+  servingNoticePeriod: string;
   noticePeriodDays: string;
-  offersInHand: string; // 'true' | 'false' for Select
+  offersInHand: string;
   offerPackage: string;
-
   source: string; status: string; rating: string; assignedJobId: string; dateAdded: string;
   notes: string; remarks: string;
   active: boolean;
@@ -94,6 +90,7 @@ export default function RecruiterCandidates() {
   const { user } = useAuth();
   const { toast } = useToast();
   
+  // --- State Management ---
   const [candidates, setCandidates] = useState<BackendCandidate[]>([]);
   const [jobs, setJobs] = useState<BackendJob[]>([]);
   const [clients, setClients] = useState<BackendClient[]>([]); 
@@ -101,12 +98,14 @@ export default function RecruiterCandidates() {
   const [viewingCandidate, setViewingCandidate] = useState<BackendCandidate | null>(null);
   const [isParsingResume, setIsParsingResume] = useState(false);
 
+  // Filters & Views
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
-  const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null);
+  const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null); 
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
   
+  // Dialogs
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -116,6 +115,21 @@ export default function RecruiterCandidates() {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const standardSources = ['Portal', 'LinkedIn', 'Referral', 'Direct', 'Agency'];
+  
+  // --- UPDATED STATUS LIST ---
+  const allStatuses = [
+    'Submitted',
+    'Shared Profiles',
+    'Yet to attend',
+    'Turnups',
+    'No Show',
+    'Selected',
+    'Joinings',
+    'Rejected',
+    'Hold',
+    'Backout'
+  ];
+
   const [isCustomSource, setIsCustomSource] = useState(false);
 
   const initialFormState: CandidateFormData = {
@@ -125,13 +139,11 @@ export default function RecruiterCandidates() {
     totalExperience: '', relevantExperience: '',
     education: '',
     ctc: '', ectc: '', 
-    
     noticePeriod: '',
     servingNoticePeriod: 'false',
     noticePeriodDays: '',
     offersInHand: 'false',
     offerPackage: '',
-
     source: 'Portal', status: 'Submitted', rating: '0', assignedJobId: '',
     dateAdded: new Date().toISOString().split('T')[0],
     notes: '', remarks: '',
@@ -200,6 +212,7 @@ export default function RecruiterCandidates() {
     }
   };
 
+  // --- Fetch Data ---
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -216,6 +229,7 @@ export default function RecruiterCandidates() {
         const allJobs = await jobRes.json();
         const allClients = await clientRes.json();
 
+        // Filter for specific recruiter candidates
         const myCandidates = allCandidates.filter((c: BackendCandidate) =>
           (c.recruiterId === user?.id || (typeof c.recruiterId === 'object' && (c.recruiterId as any)._id === user?.id))
         );
@@ -242,20 +256,16 @@ export default function RecruiterCandidates() {
     return Array.from(new Set(positions));
   }, [jobs]);
 
+  // --- Form Handling ---
   const handleInputChange = (key: string, value: string) => {
     let newValue = value;
-
-    // 1. Contact: Numbers only, limit to 10
     if (key === 'contact') {
       newValue = value.replace(/\D/g, ''); 
       if (newValue.length > 10) return; 
     }
-
-    // 2. Experience & CTC
     if (['totalExperience', 'relevantExperience', 'ctc', 'ectc'].includes(key)) {
        if (!/^\d*\.?\d*$/.test(value)) return;
     }
-
     setFormData(prev => ({ ...prev, [key]: newValue }));
     if (errors[key]) setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
   };
@@ -263,28 +273,13 @@ export default function RecruiterCandidates() {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     const data = formData;
-
-    // 1. Name: Uppercase first letter + Alphabets check
-    if (!data.name.trim()) {
-      newErrors.name = "Name is required";
-    } else if (!/^[A-Z][a-zA-Z\s]*$/.test(data.name)) {
-      newErrors.name = "Name must start with Uppercase and contain alphabets only";
-    }
+    if (!data.name.trim()) newErrors.name = "Name is required";
+    else if (!/^[A-Z][a-zA-Z\s]*$/.test(data.name)) newErrors.name = "Name must start with Uppercase";
     
-    // 2. Email
-    const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    if (!data.email.trim()) {
-      newErrors.email = "Email is required";
-    } else if (!emailRegex.test(data.email)) {
-      newErrors.email = "Invalid email format";
-    }
-
-    // 3. Contact
-    if (!data.contact.trim()) {
-      newErrors.contact = "Phone is required";
-    } else if (data.contact.length !== 10) {
-      newErrors.contact = "Phone must be exactly 10 digits";
-    }
+    if (!data.email.trim()) newErrors.email = "Email is required";
+    
+    if (!data.contact.trim()) newErrors.contact = "Phone is required";
+    else if (data.contact.length !== 10) newErrors.contact = "Phone must be exactly 10 digits";
 
     if (!data.position.trim()) newErrors.position = "Position is required";
     if (!data.client.trim()) newErrors.client = "Client is required";
@@ -292,18 +287,30 @@ export default function RecruiterCandidates() {
 
     if (isCustomSource && !data.source.trim()) newErrors.source = "Please specify source";
 
-    // 4. Conditional Validations
-    if (data.servingNoticePeriod === 'true' && !data.noticePeriodDays.trim()) {
-      newErrors.noticePeriodDays = "Please specify days";
-    }
-    if (data.offersInHand === 'true' && !data.offerPackage.trim()) {
-      newErrors.offerPackage = "Please specify package amount";
-    }
+    if (data.servingNoticePeriod === 'true' && !data.noticePeriodDays.trim()) newErrors.noticePeriodDays = "Please specify days";
+    if (data.offersInHand === 'true' && !data.offerPackage.trim()) newErrors.offerPackage = "Please specify package amount";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  // --- 1. UPDATED: Stats Calculation Logic ---
+  const stats = useMemo(() => {
+    return {
+      total: candidates.length,
+      turnups: candidates.filter(c => c.status === 'Turnups').length,
+      noShow: candidates.filter(c => c.status === 'No Show').length,
+      yetToAttend: candidates.filter(c => c.status === 'Yet to attend').length,
+      selected: candidates.filter(c => c.status === 'Selected').length,
+      rejected: candidates.filter(c => c.status === 'Rejected').length,
+      hold: candidates.filter(c => c.status === 'Hold').length,
+      joinings: candidates.filter(c => c.status === 'Joinings').length,
+      backout: candidates.filter(c => c.status === 'Backout').length,
+      sharedProfiles: candidates.filter(c => c.status === 'Shared Profiles').length,
+    };
+  }, [candidates]);
+
+  // --- 2. UPDATED: Filter Logic ---
   const getFilteredCandidates = useMemo(() => {
     return candidates.filter(c => {
       const searchMatch = 
@@ -312,46 +319,34 @@ export default function RecruiterCandidates() {
         c.candidateId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (Array.isArray(c.skills) && c.skills.some(skill => skill.toLowerCase().includes(searchTerm.toLowerCase())));
 
-      const statusMatch = statusFilter === 'all' || c.status === statusFilter;
+      // Dropdown status filter
+      const statusDropdownMatch = statusFilter === 'all' || c.status === statusFilter;
 
+      // Card click filter (overrides standard status grouping)
       let statCardMatch = true;
       if (activeStatFilter) {
-        if (activeStatFilter === 'submitted') statCardMatch = c.status === 'Submitted';
-        if (activeStatFilter === 'interview') statCardMatch = c.status?.includes('Interview');
-        if (activeStatFilter === 'offer') statCardMatch = c.status === 'Offer';
-        if (activeStatFilter === 'active') statCardMatch = c.active !== false;
+        // Strict match based on the status clicked in the card
+        statCardMatch = c.status === activeStatFilter;
       }
 
-      return searchMatch && statusMatch && statCardMatch;
+      return searchMatch && statusDropdownMatch && statCardMatch;
     });
   }, [candidates, searchTerm, statusFilter, activeStatFilter]);
 
-  const stats = useMemo(() => ({
-    total: candidates.length,
-    active: candidates.filter(c => c.active !== false).length,
-    submitted: candidates.filter(c => c.status === 'Submitted').length,
-    interview: candidates.filter(c => c.status?.includes('Interview')).length,
-    offer: candidates.filter(c => c.status === 'Offer').length,
-    joined: candidates.filter(c => c.status === 'Joined').length,
-    rejected: candidates.filter(c => c.status === 'Rejected').length
-  }), [candidates]);
-
+  // --- Exports & Utils ---
   const handleExport = () => {
     if (getFilteredCandidates.length === 0) {
       toast({ title: "No data to export", variant: "destructive" });
       return;
     }
-
     const headers = ["Candidate ID", "Name", "Email", "Phone", "Client", "Position", "Status", "Total Exp", "Current CTC", "Expected CTC", "Skills", "Date Added"];
     const escapeCsv = (str: string | undefined | null) => str ? `"${String(str).replace(/"/g, '""')}"` : '""';
-
     const rows = getFilteredCandidates.map(c => [
       escapeCsv(getCandidateId(c)), escapeCsv(c.name), escapeCsv(c.email), escapeCsv(c.contact),
       escapeCsv(c.client), escapeCsv(c.position), escapeCsv(c.status), escapeCsv(c.totalExperience),
       escapeCsv(c.ctc), escapeCsv(c.ectc), escapeCsv(Array.isArray(c.skills) ? c.skills.join(', ') : c.skills),
       escapeCsv(new Date(c.dateAdded || c.createdAt || new Date()).toLocaleDateString())
     ]);
-
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -361,9 +356,9 @@ export default function RecruiterCandidates() {
   };
 
   const getStatusBadgeVariant = (status: string | undefined) => {
-    if (status === 'Joined' || status === 'Offer') return 'default';
-    if (status === 'Rejected') return 'destructive';
-    if (status?.includes('Interview')) return 'secondary';
+    if (status === 'Joinings' || status === 'Selected') return 'default'; // Greenish usually
+    if (status === 'Rejected' || status === 'Backout' || status === 'No Show') return 'destructive';
+    if (status === 'Hold' || status === 'Yet to attend' || status === 'Turnups') return 'secondary';
     return 'outline';
   };
 
@@ -371,7 +366,6 @@ export default function RecruiterCandidates() {
   const getCandidateId = (c: BackendCandidate) => c.candidateId || c._id.substring(c._id.length - 6).toUpperCase();
   const formatSkills = (skills: string | string[] | undefined) => !skills ? 'N/A' : Array.isArray(skills) ? skills.slice(0, 3).join(', ') + (skills.length > 3 ? '...' : '') : skills.length > 50 ? skills.substring(0, 50) + '...' : skills;
   const formatDate = (dateString?: string) => dateString ? new Date(dateString).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A';
-
   const toggleSelectCandidate = (id: string) => setSelectedCandidates(prev => prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]);
   const selectAllCandidates = () => setSelectedCandidates(selectedCandidates.length === getFilteredCandidates.length ? [] : getFilteredCandidates.map(c => c._id));
   const getAssignedJobTitle = (jobId?: string) => {
@@ -380,6 +374,7 @@ export default function RecruiterCandidates() {
     return job ? `${job.position} (${job.clientName})` : jobId;
   };
 
+  // --- Dialog Handlers ---
   const openViewDialog = (c: BackendCandidate) => {
     setViewingCandidate(c);
     setIsViewDialogOpen(true);
@@ -403,14 +398,11 @@ export default function RecruiterCandidates() {
       education: c.education || '', 
       ctc: c.ctc ? String(c.ctc) : '', 
       ectc: c.ectc ? String(c.ectc) : '', 
-      
-      // Map New Fields to String for Select
       noticePeriod: c.noticePeriod ? String(c.noticePeriod) : '',
       servingNoticePeriod: c.servingNoticePeriod ? 'true' : 'false',
       noticePeriodDays: c.noticePeriodDays || '',
       offersInHand: c.offersInHand ? 'true' : 'false',
       offerPackage: c.offerPackage || '',
-
       source: c.source || 'Portal', status: c.status || 'Submitted', rating: c.rating?.toString() || '0',
       assignedJobId: typeof c.assignedJobId === 'object' ? (c.assignedJobId as any)._id : c.assignedJobId || '',
       dateAdded: c.dateAdded ? new Date(c.dateAdded).toISOString().split('T')[0] : '',
@@ -419,6 +411,7 @@ export default function RecruiterCandidates() {
     setIsEditDialogOpen(true);
   };
 
+  // --- API Handlers ---
   const handleSave = async (isEdit: boolean) => {
     if (!validateForm()) {
       toast({ title: "Validation Error", description: "Please fix form errors", variant: "destructive" });
@@ -490,6 +483,7 @@ export default function RecruiterCandidates() {
               </Button>
             </div>
           </div>
+<<<<<<< HEAD
           
           {/* --- UPDATED STAT CARDS GRID (5x2 Layout) --- */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -504,6 +498,81 @@ export default function RecruiterCandidates() {
             <StatCard title="Joinings" value={stats.joined} color="green" active={activeStatFilter === 'joinings'} onClick={() => setActiveStatFilter('joinings')} />
             <StatCard title="Backout" value={0} color="red" active={activeStatFilter === 'backout'} onClick={() => setActiveStatFilter('backout')} />
             <StatCard title="Shared Profiles" value={stats.total} color="teal" active={activeStatFilter === 'shared'} onClick={() => setActiveStatFilter('shared')} />
+=======
+
+          {/* --- 3. UPDATED: Stats Grid with Correct Data Mapping --- */}
+          <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
+            <StatCard 
+              title="Total Submitted" 
+              value={stats.total} 
+              color="blue" 
+              active={activeStatFilter === null} 
+              onClick={() => setActiveStatFilter(null)} 
+            />
+            <StatCard 
+              title="Turnups" 
+              value={stats.turnups} 
+              color="indigo" 
+              active={activeStatFilter === 'Turnups'} 
+              onClick={() => setActiveStatFilter('Turnups')} 
+            />
+            <StatCard 
+              title="No Show" 
+              value={stats.noShow} 
+              color="red" 
+              active={activeStatFilter === 'No Show'} 
+              onClick={() => setActiveStatFilter('No Show')} 
+            />
+            <StatCard 
+              title="Yet to attend" 
+              value={stats.yetToAttend} 
+              color="purple" 
+              active={activeStatFilter === 'Yet to attend'} 
+              onClick={() => setActiveStatFilter('Yet to attend')} 
+            />
+            <StatCard 
+              title="Selected" 
+              value={stats.selected} 
+              color="green" 
+              active={activeStatFilter === 'Selected'} 
+              onClick={() => setActiveStatFilter('Selected')} 
+            />
+            <StatCard 
+              title="Rejected" 
+              value={stats.rejected} 
+              color="rose" 
+              active={activeStatFilter === 'Rejected'} 
+              onClick={() => setActiveStatFilter('Rejected')} 
+            />
+            <StatCard 
+              title="Hold" 
+              value={stats.hold} 
+              color="orange" 
+              active={activeStatFilter === 'Hold'} 
+              onClick={() => setActiveStatFilter('Hold')} 
+            />
+            <StatCard 
+              title="Joinings" 
+              value={stats.joinings} 
+              color="emerald" 
+              active={activeStatFilter === 'Joinings'} 
+              onClick={() => setActiveStatFilter('Joinings')} 
+            />
+            <StatCard 
+              title="Backout" 
+              value={stats.backout} 
+              color="slate" 
+              active={activeStatFilter === 'Backout'} 
+              onClick={() => setActiveStatFilter('Backout')} 
+            />
+            <StatCard 
+              title="Shared Profiles" 
+              value={stats.sharedProfiles} 
+              color="cyan" 
+              active={activeStatFilter === 'Shared Profiles'} 
+              onClick={() => setActiveStatFilter('Shared Profiles')} 
+            />
+>>>>>>> f654f80e25fc9c192d2dfa3e87e110b80f75d937
           </div>
 
 
@@ -515,14 +584,12 @@ export default function RecruiterCandidates() {
               </div>
               <div className="flex gap-3">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status"/></SelectTrigger>
+                  <SelectTrigger className="w-[180px]"><SelectValue placeholder="Filter Status"/></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="Submitted">Submitted</SelectItem>
-                    <SelectItem value="Interview">Interview</SelectItem>
-                    <SelectItem value="Offer">Offer</SelectItem>
-                    <SelectItem value="Joined">Joined</SelectItem>
-                    <SelectItem value="Rejected">Rejected</SelectItem>
+                    {allStatuses.map(status => (
+                        <SelectItem key={status} value={status}>{status}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <div className="flex bg-slate-100 rounded-lg p-1">
@@ -533,6 +600,7 @@ export default function RecruiterCandidates() {
             </div>
           </Card>
 
+          {/* ... [Table/Grid Views] ... */}
           {viewMode === 'table' ? (
             <Card className="overflow-hidden border-slate-200 dark:border-slate-800 shadow-sm">
               <div className="overflow-x-auto">
@@ -626,7 +694,7 @@ export default function RecruiterCandidates() {
             <DialogHeader>
                 <DialogTitle>{isEditDialogOpen ? 'Edit Candidate' : 'Add New Candidate'}</DialogTitle>
             </DialogHeader>
-
+            {/* ... [Resume Upload Section same as before] ... */}
             {!isEditDialogOpen && (
               <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-6 bg-slate-50 dark:bg-slate-900/50 mb-4">
                 <div className="flex flex-col items-center gap-3">
@@ -708,6 +776,7 @@ export default function RecruiterCandidates() {
                 {errors.skills && <span className="text-xs text-red-500">{errors.skills}</span>}
               </div>
 
+              {/* ... [Education, Experience, Pay sections same as before] ... */}
               <div className="md:col-span-3 font-semibold text-slate-500 border-b pb-1 mt-4 flex items-center gap-2"><GraduationCap className="h-4 w-4"/> Education</div>
               <div className="md:col-span-3 space-y-1"><Label>Qualification</Label><Input value={formData.education} onChange={e => handleInputChange('education', e.target.value)} placeholder="e.g. B.Tech from IIT Delhi"/></div>
 
@@ -766,7 +835,20 @@ export default function RecruiterCandidates() {
                   <SelectContent>{jobs.map(j => <SelectItem key={j._id} value={j._id}>{j.position} - {j.clientName}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2"><Label>Status</Label><Select value={formData.status} onValueChange={v => handleInputChange('status', v)}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="Submitted">Submitted</SelectItem><SelectItem value="Interview">Interview</SelectItem><SelectItem value="Offer">Offer</SelectItem><SelectItem value="Joined">Joined</SelectItem><SelectItem value="Rejected">Rejected</SelectItem></SelectContent></Select></div>
+
+              {/* --- 4. UPDATED: Status Dropdown in Form --- */}
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={formData.status} onValueChange={v => handleInputChange('status', v)}>
+                    <SelectTrigger><SelectValue placeholder="Select Status"/></SelectTrigger>
+                    <SelectContent>
+                        {allStatuses.map(status => (
+                            <SelectItem key={status} value={status}>{status}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+              </div>
+              
               <div className="space-y-2"><Label>Rating</Label><Select value={formData.rating} onValueChange={v => handleInputChange('rating', v)}><SelectTrigger><SelectValue placeholder="Rate"/></SelectTrigger><SelectContent>{[1,2,3,4,5].map(r=><SelectItem key={r} value={r.toString()}>{r} Stars</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-2"><Label>Date Added</Label><Input type="date" value={formData.dateAdded} onChange={e => handleInputChange('dateAdded', e.target.value)}/></div>
 
@@ -779,11 +861,12 @@ export default function RecruiterCandidates() {
             </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* View Dialog */}
+      
+      {/* View Dialog Logic remains same... */}
       {viewingCandidate && (
         <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+             {/* ... [Same content as original View Dialog] ... */}
             <DialogHeader>
               <DialogTitle className="text-2xl flex items-center gap-3">
                 <Avatar className="h-10 w-10"><AvatarFallback className="bg-blue-600 text-white">{getInitials(viewingCandidate.name)}</AvatarFallback></Avatar>
@@ -872,7 +955,7 @@ export default function RecruiterCandidates() {
 }
 
 const StatCard = ({ title, value, color, active, onClick }: any) => (
-    <div onClick={onClick} className={`p-4 rounded-lg shadow-sm border border-l-4 border-l-${color}-500 bg-white ${active ? 'ring-2 ring-blue-500' : ''} cursor-pointer`}>
+    <div onClick={onClick} className={`p-4 rounded-lg shadow-sm border border-l-4 border-l-${color}-500 bg-white ${active ? 'ring-2 ring-blue-500' : ''} cursor-pointer hover:bg-slate-50 transition-colors`}>
         <div className="flex justify-between items-center">
             <div><h3 className="text-2xl font-bold">{value}</h3><p className="text-sm text-slate-500">{title}</p></div>
         </div>
