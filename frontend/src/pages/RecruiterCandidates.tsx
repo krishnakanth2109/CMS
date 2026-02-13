@@ -492,13 +492,16 @@ export default function RecruiterCandidates() {
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
-            <StatCard title="Total" value={stats.total} color="blue" active={activeStatFilter === null} onClick={() => setActiveStatFilter(null)} />
-            <StatCard title="Active" value={stats.active} color="green" active={activeStatFilter === 'active'} onClick={() => setActiveStatFilter('active')} />
-            <StatCard title="Submitted" value={stats.submitted} color="slate" active={activeStatFilter === 'submitted'} onClick={() => setActiveStatFilter('submitted')} />
-            <StatCard title="Interview" value={stats.interview} color="orange" active={activeStatFilter === 'interview'} onClick={() => setActiveStatFilter('interview')} />
-            <StatCard title="Offer" value={stats.offer} color="purple" active={activeStatFilter === 'offer'} onClick={() => setActiveStatFilter('offer')} />
-            <StatCard title="Joined" value={stats.joined} color="teal" />
-            <StatCard title="Rejected" value={stats.rejected} color="red" />
+            <StatCard title="Total Submitted" value={stats.total} color="blue" active={activeStatFilter === null} onClick={() => setActiveStatFilter(null)} />
+            <StatCard title="Turnups" value={stats.active} color="green" active={activeStatFilter === 'active'} onClick={() => setActiveStatFilter('active')} />
+            <StatCard title="No show" value={stats.submitted} color="slate" active={activeStatFilter === 'submitted'} onClick={() => setActiveStatFilter('submitted')} />
+            <StatCard title="Yet to attend" value={stats.interview} color="purple" active={activeStatFilter === 'interview'} onClick={() => setActiveStatFilter('interview')} />
+            <StatCard title="Selected" value={stats.offer} color="green" active={activeStatFilter === 'offer'} onClick={() => setActiveStatFilter('offer')} />
+            <StatCard title="Rejected" value={stats.joined} color="red" />
+            <StatCard title="Hold" value={stats.rejected} color="orange" />
+            <StatCard title="Joinings" value={stats.offer} color="green" active={activeStatFilter === 'offer'} onClick={() => setActiveStatFilter('offer')} />
+            <StatCard title="Backout" value={stats.offer} color="red" active={activeStatFilter === 'offer'} onClick={() => setActiveStatFilter('offer')} />
+            <StatCard title="Shared Profiles" value={stats.offer} color="teal" active={activeStatFilter === 'offer'} onClick={() => setActiveStatFilter('offer')} />
           </div>
 
           <Card className="p-4 border-slate-200 dark:border-slate-800 shadow-sm">

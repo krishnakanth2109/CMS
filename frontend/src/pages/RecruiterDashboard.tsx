@@ -602,15 +602,15 @@ export default function RecruiterDashboard() {
           <div className="grid gap-3 md:gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             <ProfessionalStatCard title="Total Candidates" value={candidateStats.total} icon={Users} trend={5} onClick={handleNavigateToCandidates} borderColor="border-blue-200 dark:border-blue-800" iconColor="text-blue-600 dark:text-blue-400" />
             <ProfessionalStatCard title="Assigned Jobs" value={jobStats.totalAssignedJobs} icon={Briefcase} trend={2} onClick={handleNavigateToAssignments} borderColor="border-green-200 dark:border-green-800" iconColor="text-green-600 dark:text-green-400" />
-            <ProfessionalStatCard title="Success Rate" value={`${candidateStats.successRate}%`} icon={TrendingUp} trend={parseFloat(candidateStats.successRate) > 0 ? 3 : 0} onClick={() => {}} borderColor="border-indigo-200 dark:border-indigo-800" iconColor="text-indigo-600 dark:text-indigo-400" />
+            <ProfessionalStatCard title="Performance" value={`${candidateStats.successRate}%`} icon={TrendingUp} trend={parseFloat(candidateStats.successRate) > 0 ? 3 : 0} onClick={() => {}} borderColor="border-indigo-200 dark:border-indigo-800" iconColor="text-indigo-600 dark:text-indigo-400" />
             <ProfessionalStatCard title="Total Interviews" value={interviewStats.totalInterviews} icon={Calendar} trend={8} onClick={handleNavigateToSchedules} borderColor="border-purple-200 dark:border-purple-800" iconColor="text-purple-600 dark:text-purple-400" />
           </div>
 
           {/* Pipeline Breakdown */}
           <div className="grid gap-3 md:gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             <ProfessionalStatCard title="Submitted" value={candidateStats.submitted} icon={ClipboardList} onClick={handleNavigateToCandidates} borderColor="border-blue-200 dark:border-blue-800" iconColor="text-blue-600 dark:text-blue-400" />
-            <ProfessionalStatCard title="Interviews" value={candidateStats.interview} icon={Calendar} onClick={handleNavigateToSchedules} borderColor="border-indigo-200 dark:border-indigo-800" iconColor="text-indigo-600 dark:text-indigo-400" />
-            <ProfessionalStatCard title="Offers" value={candidateStats.offer} icon={Briefcase} onClick={handleNavigateToCandidates} borderColor="border-green-200 dark:border-green-800" iconColor="text-green-600 dark:text-green-400" />
+            <ProfessionalStatCard title="Rejected" value={candidateStats.interview} icon={Calendar} onClick={handleNavigateToSchedules} borderColor="border-indigo-200 dark:border-indigo-800" iconColor="text-indigo-600 dark:text-indigo-400" />
+            <ProfessionalStatCard title="Hold" value={candidateStats.offer} icon={Briefcase} onClick={handleNavigateToCandidates} borderColor="border-green-200 dark:border-green-800" iconColor="text-green-600 dark:text-green-400" />
             <ProfessionalStatCard title="Joined" value={candidateStats.joined} icon={UserCheck} onClick={handleNavigateToCandidates} borderColor="border-emerald-200 dark:border-emerald-800" iconColor="text-emerald-600 dark:text-emerald-400" />
           </div>
 
