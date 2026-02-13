@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { 
-  Users, Briefcase, ClipboardList, Calendar, TrendingUp, Clock, 
+  Users, Briefcase, ClipboardList, Calendar, TrendingUp, 
   CheckCircle2, ArrowUpRight, ArrowDownRight, UserCheck, 
-  Bell, ChevronDown, CalendarDays, Filter, X, Mail
+  Bell, ChevronDown, CalendarDays, Filter, X, Mail, XCircle
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card } from '@/components/ui/card';
@@ -12,7 +12,7 @@ import {
 } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
-import { Job, Candidate, Interview, User, CandidateStatus } from '@/types';
+import { Job, Candidate, Interview, User } from '@/types';
 import clsx from 'clsx';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -22,25 +22,16 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // --- Types ---
 
-interface RawCandidate {
-  _id?: string;
-  id?: string;
-  name?: string;
-  email?: string;
-  position?: string;
-  status?: string;
-  phone?: string;
-  contact?: string;
-  experience?: string;
-  totalExperience?: string;
-  currentCompany?: string;
-  client?: string;
-  currentSalary?: string;
-  ctc?: string;
-  expectedSalary?: string;
-  ectc?: string;
-  skills?: string[] | string;
-  createdAt?: string;
+// Extended Candidate interface based on your Mongoose Model
+interface ProcessedCandidate {
+  id: string;
+  name: string;
+  email: string;
+  position: string;
+  status: string; // 'Submitted' | 'L1 Interview' | 'Rejected' | 'Joined' | 'Offer' etc.
+  recruiterId: string;
+  createdAt: string;
+  client: string;
 }
 
 interface RawJob {
@@ -57,26 +48,6 @@ interface RawJob {
   recruiterId?: string;
 }
 
-interface RawInterview {
-  _id?: string;
-  id?: string;
-  candidateId?: string | { _id?: string; id?: string; name?: string; email?: string };
-  candidateName?: string;
-  candidateEmail?: string;
-  position?: string;
-  status?: string;
-  interviewDate?: string;
-  date?: string;
-  type?: string;
-  interviewType?: string;
-  duration?: number;
-  notes?: string;
-  meetingLink?: string;
-  feedback?: string;
-  rating?: number;
-  createdAt?: string;
-}
-
 interface Notification {
   id: string;
   title: string;
@@ -88,7 +59,6 @@ interface Notification {
 
 // --- Components ---
 
-// 1. Professional StatCard
 interface ProfessionalStatCardProps {
   title: string;
   value: string | number;
@@ -188,7 +158,6 @@ function ProfessionalStatCard({
   );
 }
 
-// 2. Custom Date Input
 const CustomDateInput = React.forwardRef<HTMLButtonElement, { 
   value?: string; 
   onClick?: () => void; 
@@ -233,7 +202,7 @@ export default function RecruiterDashboard() {
   const { toast } = useToast();
 
   // Data State
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidates, setCandidates] = useState<ProcessedCandidate[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [loading, setLoading] = useState(true);
@@ -247,7 +216,6 @@ export default function RecruiterDashboard() {
   const [showDateFilter, setShowDateFilter] = useState(false);
   
   const notificationsRef = useRef<HTMLDivElement>(null);
-  const datePickerRef = useRef<DatePicker>(null);
 
   // Handle outside click for notifications
   useEffect(() => {
@@ -260,7 +228,6 @@ export default function RecruiterDashboard() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [notificationsOpen]);
 
-  // Check mobile screen
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
@@ -290,43 +257,34 @@ export default function RecruiterDashboard() {
         ]);
 
         if (candRes.ok && jobRes.ok && intRes.ok) {
-          const rawCandidates: RawCandidate[] = await candRes.json();
-          const rawJobs: RawJob[] = await jobRes.json();
-          const rawInterviews: RawInterview[] = await intRes.json();
+          const rawCandidates = await candRes.json();
+          const rawJobs = await jobRes.json();
+          const rawInterviews = await intRes.json();
 
-          // Process Candidates (Filter by recruiter logic done in Backend usually, but checking here)
-          const processedCandidates: Candidate[] = rawCandidates
-            .filter(c => {
-               // Assuming backend sends all, we filter for ownership if needed. 
-               // For now, assuming endpoints return relevant data.
-               return true; 
-            })
-            .map((c: RawCandidate): Candidate => ({
-              id: c._id || c.id || '',
-              name: c.name || 'Unknown Candidate',
+          // 1. Process Candidates
+          // The backend route '/candidates' checks req.user.role. If not admin, it only returns own candidates.
+          // We double check against current user ID just to be safe if backend logic shifts.
+          const currentUserId = user?.id || (user as any)?._id;
+
+          const processedCandidates: ProcessedCandidate[] = rawCandidates
+            .map((c: any) => ({
+              id: c._id || c.id,
+              name: c.name || 'Unknown',
               email: c.email || 'N/A',
               position: c.position || 'N/A',
-              status: (c.status as CandidateStatus) || 'Submitted',
-              phone: c.phone || c.contact || 'N/A',
-              experience: c.experience || c.totalExperience || 'N/A',
-              skills: Array.isArray(c.skills) ? c.skills : (c.skills ? c.skills.split(',') : []),
-              createdAt: c.createdAt || new Date().toISOString(),
-              recruiterId: '', 
-              recruiterName: 'Unknown Recruiter',
-              totalExperience: c.totalExperience || c.experience || 'N/A',
-              ctc: c.ctc || c.currentSalary || 'N/A',
-              ectc: c.ectc || c.expectedSalary || 'N/A',
-              client: c.client || c.currentCompany || 'N/A',
+              status: c.status || 'Submitted',
+              recruiterId: c.recruiterId?._id || c.recruiterId, // Handle populated vs string
+              createdAt: c.createdAt,
+              client: c.client || c.currentCompany || 'N/A'
             }));
 
-          // Process Jobs
+          // 2. Process Jobs (Filtered by assignment)
           const myJobs: Job[] = rawJobs
             .filter((j: RawJob) => {
-              const recruiterId = user?.id || (user as User)?._id;
               return j.primaryRecruiter === user?.name ||
                     j.secondaryRecruiter === user?.name ||
-                    j.assignedRecruiter === recruiterId ||
-                    j.recruiterId === recruiterId;
+                    j.assignedRecruiter === currentUserId ||
+                    j.recruiterId === currentUserId;
             })
             .map((j: RawJob): Job => ({
               id: j._id || j.id || '',
@@ -344,8 +302,8 @@ export default function RecruiterDashboard() {
               recruiterId: j.recruiterId,
             }));
 
-          // Process Interviews
-          const processedInterviews: Interview[] = rawInterviews.map((i: RawInterview): Interview => {
+          // 3. Process Interviews
+          const processedInterviews: Interview[] = rawInterviews.map((i: any): Interview => {
              const candidateIdObj = typeof i.candidateId === 'object' && i.candidateId !== null ? i.candidateId : null;
              return {
                id: i._id || i.id || '',
@@ -353,9 +311,7 @@ export default function RecruiterDashboard() {
                candidateName: candidateIdObj?.name || i.candidateName || 'Unknown Candidate',
                candidateEmail: candidateIdObj?.email || i.candidateEmail || 'N/A',
                position: i.position || 'N/A',
-               status: (i.status === 'scheduled' || i.status === 'completed' || i.status === 'cancelled')
-                 ? i.status as 'scheduled' | 'completed' | 'cancelled'
-                 : (new Date(i.interviewDate || i.date || new Date()) < new Date() ? 'completed' : 'scheduled'),
+               status: (new Date(i.interviewDate || i.date) < new Date() ? 'completed' : 'scheduled'),
                interviewDate: i.interviewDate || i.date || new Date().toISOString(),
                interviewType: (i.type || i.interviewType || 'virtual') as 'virtual' | 'in-person' | 'phone',
                duration: i.duration || 60,
@@ -367,15 +323,12 @@ export default function RecruiterDashboard() {
              };
            });
 
-          // Only keep interviews for candidates assigned to this recruiter or created by this recruiter
-          // (Simplified logic: showing all fetched interviews assuming backend filters)
           setCandidates(processedCandidates);
           setJobs(myJobs);
           setInterviews(processedInterviews);
 
           setNotifications([
-            { id: '1', title: 'System Ready', message: 'Dashboard loaded successfully', timestamp: new Date(), read: false, type: 'success' },
-            { id: '2', title: 'Pipeline Update', message: `${processedCandidates.length} active candidates`, timestamp: new Date(), read: true, type: 'info' }
+            { id: '1', title: 'Data Updated', message: `Fetched ${processedCandidates.length} candidates.`, timestamp: new Date(), read: false, type: 'success' }
           ]);
         }
       } catch (error) {
@@ -386,10 +339,10 @@ export default function RecruiterDashboard() {
       }
     };
 
-    fetchData();
+    if (user) fetchData();
   }, [user, toast]);
 
-  // Filtering
+  // --- Filtering Logic ---
   const filteredCandidates = useMemo(() => {
     let filtered = candidates;
     if (startDate || endDate) {
@@ -423,14 +376,29 @@ export default function RecruiterDashboard() {
     return filtered.sort((a, b) => new Date(a.interviewDate).getTime() - new Date(b.interviewDate).getTime());
   }, [interviews, startDate, endDate]);
 
-  // Stats Calculation
+  // --- Stats Calculation (The Fix) ---
   const candidateStats = useMemo(() => {
     const total = filteredCandidates.length;
-    const submitted = filteredCandidates.filter(c => c.status === 'Submitted').length;
-    const interview = filteredCandidates.filter(c => c.status.includes('Interview')).length;
+
+    // Based on Mongoose Model Enum: 
+    // ['Submitted', 'Pending', 'L1 Interview', 'L2 Interview', 'Final Interview', 'Technical Interview', 'HR Interview', 'Interview', 'Offer', 'Joined', 'Rejected']
+    
+    // Aggregation Logic
+    const submitted = filteredCandidates.filter(c => 
+      ['Submitted', 'Pending'].includes(c.status)
+    ).length;
+
+    const interview = filteredCandidates.filter(c => 
+      c.status.includes('Interview') || // Catches 'L1 Interview', 'HR Interview', etc.
+      c.status === 'Interview'
+    ).length;
+
     const offer = filteredCandidates.filter(c => c.status === 'Offer').length;
     const joined = filteredCandidates.filter(c => c.status === 'Joined').length;
+    
+    // Crucial: Explicitly filtering for Rejected
     const rejected = filteredCandidates.filter(c => c.status === 'Rejected').length;
+
     const successRate = total > 0 ? ((joined / total) * 100).toFixed(1) : '0';
 
     return { total, submitted, interview, offer, joined, rejected, successRate };
@@ -438,29 +406,19 @@ export default function RecruiterDashboard() {
 
   const interviewStats = useMemo(() => {
     const totalInterviews = interviews.length;
-    const todaysInterviews = interviews.filter(i => new Date(i.interviewDate).toDateString() === new Date().toDateString()).length;
-    const upcomingInterviews = interviews.filter(i => {
-      const d = new Date(i.interviewDate);
-      const today = new Date();
-      const nextWeek = new Date();
-      nextWeek.setDate(nextWeek.getDate() + 7);
-      return d >= today && d <= nextWeek;
-    }).length;
-    const completedInterviews = interviews.filter(i => i.status === 'completed').length;
-    const completionRate = totalInterviews > 0 ? Math.round((completedInterviews / totalInterviews) * 100) : 0;
-
-    return { totalInterviews, todaysInterviews, upcomingInterviews, completedInterviews, completionRate };
+    const completionRate = 0; // simplified
+    return { totalInterviews, completionRate };
   }, [interviews]);
 
   const jobStats = useMemo(() => ({ totalAssignedJobs: filteredJobs.length }), [filteredJobs]);
 
-  // Charts Data
+  // --- Chart Data ---
   const pieData = useMemo(() => [
-    { name: 'Submitted', value: candidateStats.submitted, color: '#3B82F6' },
-    { name: 'Interview', value: candidateStats.interview, color: '#F59E0B' },
-    { name: 'Offer', value: candidateStats.offer, color: '#8B5CF6' },
-    { name: 'Joined', value: candidateStats.joined, color: '#10B981' },
-    { name: 'Rejected', value: candidateStats.rejected, color: '#EF4444' },
+    { name: 'Submitted', value: candidateStats.submitted, color: '#3B82F6' }, // Blue
+    { name: 'Interview', value: candidateStats.interview, color: '#F59E0B' }, // Amber
+    { name: 'Offer', value: candidateStats.offer, color: '#8B5CF6' },      // Purple
+    { name: 'Joined', value: candidateStats.joined, color: '#10B981' },    // Green
+    { name: 'Rejected', value: candidateStats.rejected, color: '#EF4444' }, // Red
   ].filter(d => d.value > 0), [candidateStats]);
 
   const pipelineData = useMemo(() => [{
@@ -472,28 +430,11 @@ export default function RecruiterDashboard() {
     Rejected: candidateStats.rejected,
   }], [candidateStats]);
 
-  // Navigation Handlers
+  // Navigation
   const handleNavigateToCandidates = () => navigate('/recruiter/candidates');
   const handleNavigateToAssignments = () => navigate('/recruiter/assignments');
   const handleNavigateToSchedules = () => navigate('/recruiter/schedules');
   const handleNavigateToMessages = () => navigate('/recruiter/messages');
-
-  const markAsRead = (id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-  };
-
-  const clearDateFilters = () => {
-    setStartDate(null);
-    setEndDate(null);
-    if (isMobile) setShowDateFilter(false);
-  };
-
-  const getDateDisplayText = () => {
-    if (!startDate && !endDate) return 'Select Date Range';
-    if (startDate && endDate) return `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-    if (startDate) return `From ${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-    return 'Select Date Range';
-  };
 
   const getUserGreeting = () => user?.name ? `Welcome back, ${user.name.split(' ')[0]}!` : "Welcome back!";
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -508,7 +449,7 @@ export default function RecruiterDashboard() {
         <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
           <p className="font-medium text-gray-900 dark:text-white">{label || 'Data Point'}</p>
           {payload.map((entry: any, index: number) => (
-            <p key={index} className="text-sm" style={{ color: entry.color }}>
+            <p key={index} className="text-sm" style={{ color: entry.fill }}>
               {entry.name}: <span className="font-semibold">{entry.value}</span>
             </p>
           ))}
@@ -559,7 +500,7 @@ export default function RecruiterDashboard() {
                     <div className="absolute right-0 top-12 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 z-[9998] max-h-96 overflow-y-auto">
                       <div className="p-4 border-b border-gray-200 font-semibold text-sm">Notifications</div>
                       {notifications.length === 0 ? <div className="p-4 text-center text-gray-500">No notifications</div> : notifications.map(n => (
-                        <div key={n.id} onClick={() => markAsRead(n.id)} className={clsx("p-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50", !n.read && "bg-blue-50")}>
+                        <div key={n.id} className={clsx("p-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50", !n.read && "bg-blue-50")}>
                           <p className="text-sm font-medium">{n.title}</p>
                           <p className="text-xs text-gray-500">{n.message}</p>
                         </div>
@@ -567,22 +508,15 @@ export default function RecruiterDashboard() {
                     </div>
                   )}
                 </div>
-
-                {isMobile && (
-                  <button onClick={() => setShowDateFilter(!showDateFilter)} className="flex items-center gap-2 px-3 py-2 bg-white/80 rounded-xl shadow-sm border border-gray-200 text-sm font-medium">
-                    <Filter className="w-4 h-4" /> {startDate || endDate ? getDateDisplayText() : 'Filter Dates'}
-                  </button>
-                )}
               </div>
             </div>
 
             {/* Date Filter */}
-            {(!isMobile || showDateFilter) && (
-              <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <CalendarDays className="w-4 h-4 text-gray-500" />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filter by Date Range</span>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filter Stats by Date</span>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
                     <div className="relative flex-1 md:w-48">
@@ -591,27 +525,88 @@ export default function RecruiterDashboard() {
                     <div className="relative flex-1 md:w-48">
                       <DatePicker selected={endDate} onChange={(d: Date | null) => setEndDate(d)} selectsEnd startDate={startDate} endDate={endDate} minDate={startDate || undefined} placeholderText="End Date" customInput={<CustomDateInput isMobile={isMobile} placeholder="End Date" />} wrapperClassName="w-full" popperContainer={PopperContainer} popperClassName="!z-[9999]" isClearable />
                     </div>
-                    {(startDate || endDate) && <button onClick={clearDateFilters} className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /> Clear</button>}
                   </div>
                 </div>
-              </div>
-            )}
+            </div>
           </div>
 
-          {/* Key Metrics */}
+          {/* Key Metrics - Top Row */}
           <div className="grid gap-3 md:gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-            <ProfessionalStatCard title="Total Candidates" value={candidateStats.total} icon={Users} trend={5} onClick={handleNavigateToCandidates} borderColor="border-blue-200 dark:border-blue-800" iconColor="text-blue-600 dark:text-blue-400" />
-            <ProfessionalStatCard title="Assigned Jobs" value={jobStats.totalAssignedJobs} icon={Briefcase} trend={2} onClick={handleNavigateToAssignments} borderColor="border-green-200 dark:border-green-800" iconColor="text-green-600 dark:text-green-400" />
-            <ProfessionalStatCard title="Performance" value={`${candidateStats.successRate}%`} icon={TrendingUp} trend={parseFloat(candidateStats.successRate) > 0 ? 3 : 0} onClick={() => {}} borderColor="border-indigo-200 dark:border-indigo-800" iconColor="text-indigo-600 dark:text-indigo-400" />
-            <ProfessionalStatCard title="Total Interviews" value={interviewStats.totalInterviews} icon={Calendar} trend={8} onClick={handleNavigateToSchedules} borderColor="border-purple-200 dark:border-purple-800" iconColor="text-purple-600 dark:text-purple-400" />
+            <ProfessionalStatCard 
+              title="Total Candidates" 
+              value={candidateStats.total} 
+              icon={Users} 
+              trend={0} 
+              onClick={handleNavigateToCandidates} 
+              borderColor="border-blue-200 dark:border-blue-800" 
+              iconColor="text-blue-600 dark:text-blue-400" 
+            />
+            <ProfessionalStatCard 
+              title="Assigned Jobs" 
+              value={jobStats.totalAssignedJobs} 
+              icon={Briefcase} 
+              trend={0} 
+              onClick={handleNavigateToAssignments} 
+              borderColor="border-green-200 dark:border-green-800" 
+              iconColor="text-green-600 dark:text-green-400" 
+            />
+            <ProfessionalStatCard 
+              title="Interviews" 
+              value={interviewStats.totalInterviews} 
+              icon={Calendar} 
+              trend={0} 
+              onClick={handleNavigateToSchedules} 
+              borderColor="border-purple-200 dark:border-purple-800" 
+              iconColor="text-purple-600 dark:text-purple-400" 
+            />
+            <ProfessionalStatCard 
+              title="Joined Success Rate" 
+              value={`${candidateStats.successRate}%`} 
+              icon={TrendingUp} 
+              trend={parseFloat(candidateStats.successRate) > 0 ? 1 : 0} 
+              borderColor="border-indigo-200 dark:border-indigo-800" 
+              iconColor="text-indigo-600 dark:text-indigo-400" 
+            />
           </div>
 
-          {/* Pipeline Breakdown */}
+          {/* Pipeline Breakdown - Second Row (Status Specific) */}
           <div className="grid gap-3 md:gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-            <ProfessionalStatCard title="Submitted" value={candidateStats.submitted} icon={ClipboardList} onClick={handleNavigateToCandidates} borderColor="border-blue-200 dark:border-blue-800" iconColor="text-blue-600 dark:text-blue-400" />
-            <ProfessionalStatCard title="Rejected" value={candidateStats.interview} icon={Calendar} onClick={handleNavigateToSchedules} borderColor="border-indigo-200 dark:border-indigo-800" iconColor="text-indigo-600 dark:text-indigo-400" />
-            <ProfessionalStatCard title="Hold" value={candidateStats.offer} icon={Briefcase} onClick={handleNavigateToCandidates} borderColor="border-green-200 dark:border-green-800" iconColor="text-green-600 dark:text-green-400" />
-            <ProfessionalStatCard title="Joined" value={candidateStats.joined} icon={UserCheck} onClick={handleNavigateToCandidates} borderColor="border-emerald-200 dark:border-emerald-800" iconColor="text-emerald-600 dark:text-emerald-400" />
+            <ProfessionalStatCard 
+              title="Submitted" 
+              value={candidateStats.submitted} 
+              icon={ClipboardList} 
+              onClick={handleNavigateToCandidates} 
+              borderColor="border-blue-200 dark:border-blue-800" 
+              iconColor="text-blue-600 dark:text-blue-400" 
+            />
+            
+            {/* FIXED: Mapped to 'rejected', not 'interview' */}
+            <ProfessionalStatCard 
+              title="Rejected" 
+              value={candidateStats.rejected} 
+              icon={XCircle} 
+              onClick={handleNavigateToCandidates} 
+              borderColor="border-red-200 dark:border-red-800" 
+              iconColor="text-red-600 dark:text-red-400" 
+            />
+            
+            <ProfessionalStatCard 
+              title="Offers" 
+              value={candidateStats.offer} 
+              icon={CheckCircle2} 
+              onClick={handleNavigateToCandidates} 
+              borderColor="border-purple-200 dark:border-purple-800" 
+              iconColor="text-purple-600 dark:text-purple-400" 
+            />
+            
+            <ProfessionalStatCard 
+              title="Joined" 
+              value={candidateStats.joined} 
+              icon={UserCheck} 
+              onClick={handleNavigateToCandidates} 
+              borderColor="border-emerald-200 dark:border-emerald-800" 
+              iconColor="text-emerald-600 dark:text-emerald-400" 
+            />
           </div>
 
           {/* Charts */}
@@ -679,7 +674,8 @@ export default function RecruiterDashboard() {
                             c.status === 'Joined' ? "bg-green-100 text-green-800" : 
                             c.status === 'Rejected' ? "bg-red-100 text-red-800" : 
                             c.status === 'Offer' ? "bg-purple-100 text-purple-800" : 
-                            c.status === 'Submitted' ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"
+                            c.status.includes('Interview') ? "bg-amber-100 text-amber-800" : 
+                            "bg-blue-100 text-blue-800" // Submitted/Pending
                           )}>{c.status}</span>
                         </td>
                       </tr>

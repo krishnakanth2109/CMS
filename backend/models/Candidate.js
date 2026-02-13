@@ -27,9 +27,16 @@ const candidateSchema = mongoose.Schema({
   status: { 
     type: String, 
     enum: [
-      'Submitted', 'Pending', 'L1 Interview', 'L2 Interview', 
-      'Final Interview', 'Technical Interview', 'HR Interview', 
-      'Interview', 'Offer', 'Joined', 'Rejected'
+      'Submitted',        // Default Initial Status
+      'Shared Profiles',  // New
+      'Yet to attend',    // New
+      'Turnups',          // New
+      'No Show',          // New
+      'Selected',         // New
+      'Joinings',         // New
+      'Rejected',         // Existing
+      'Hold',             // New
+      'Backout'           // New
     ],
     default: 'Submitted'
   },
@@ -43,16 +50,14 @@ const candidateSchema = mongoose.Schema({
   ectc: { type: String },
   takeHomeSalary: { type: String },
 
-  // --- NEW FIELDS: Offers ---
+  // --- Offers ---
   offersInHand: { type: Boolean, default: false },
-  offerPackage: { type: String }, // Only used if offersInHand is true
+  offerPackage: { type: String }, 
 
-  // --- NEW FIELDS: Notice Period ---
-  // We keep 'noticePeriod' for legacy text (e.g., "Immediate") if needed,
-  // but add specific fields for the "If Yes -> Days" logic.
+  // --- Notice Period ---
   noticePeriod: { type: String }, 
-  servingNoticePeriod: { type: Boolean, default: false }, // "If yes"
-  noticePeriodDays: { type: String }, // "Days"
+  servingNoticePeriod: { type: Boolean, default: false }, 
+  noticePeriodDays: { type: String }, 
   
   // --- Relationships ---
   recruiterId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
