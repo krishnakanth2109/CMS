@@ -27,9 +27,15 @@ export const createCandidate = async (req, res) => {
   try {
     const { 
       name, email, contact, position, skills, client, status,
-      totalExperience, relevantExperience, ctc, ectc, noticePeriod,
-      assignedJobId, notes, dateAdded, active,
-      recruiterId // Admin might send this
+      totalExperience, relevantExperience, ctc, ectc, takeHomeSalary, 
+      noticePeriod, // Legacy field
+      
+      // NEW FIELDS
+      offersInHand, offerPackage, 
+      servingNoticePeriod, noticePeriodDays,
+
+      assignedJobId, reasonForChange, dateAdded, active, 
+      recruiterId 
     } = req.body;
 
     // Determine Recruiter: If Admin sent an ID, use it. Otherwise use logged-in user.
@@ -48,8 +54,16 @@ export const createCandidate = async (req, res) => {
       name, email, contact, position, 
       skills: Array.isArray(skills) ? skills : skills.split(',').map(s => s.trim()),
       client, status,
-      totalExperience, relevantExperience, ctc, ectc, noticePeriod,
-      assignedJobId, notes, dateAdded, active,
+      totalExperience, relevantExperience, ctc, ectc, takeHomeSalary, 
+      
+      // Mapped New Fields
+      noticePeriod, 
+      offersInHand, 
+      offerPackage, 
+      servingNoticePeriod, 
+      noticePeriodDays,
+
+      assignedJobId, reasonForChange, dateAdded, active,
       recruiterId: targetRecruiterId,
       recruiterName: targetRecruiterName
     });

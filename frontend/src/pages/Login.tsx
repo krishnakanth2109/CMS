@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Users, Eye, EyeOff, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Login() {
@@ -60,8 +60,13 @@ export default function Login() {
         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-purple-600/20 rounded-full blur-3xl"></div>
 
         <div className="relative z-10 max-w-lg space-y-8">
-          <div className="w-16 h-16 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-2xl flex items-center justify-center shadow-xl mb-8">
-             <Users className="h-8 w-8 text-white" />
+          {/* Logo Redesign */}
+          <div className="w-24 h-24 bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center shadow-2xl mb-8 border border-white/10">
+             <img 
+               src="https://image2url.com/images/1764921567560-55d1b6d6-49f3-4473-82e3-1cdd2f7c19c2.jpg"  
+               alt="Brand Logo" 
+               className="w-250 h-256 object-contain"
+             />
           </div>
           
           <h1 className="text-5xl font-extrabold tracking-tight leading-tight">

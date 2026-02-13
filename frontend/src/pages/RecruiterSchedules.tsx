@@ -213,9 +213,11 @@ export default function RecruiterSchedules() {
     fetchData();
   }, []);
 
-  // --- Filter Logic ---
+  // --- Filter Logic (UPDATED TO PREVENT DUPLICATES) ---
   const filteredInterviews = useMemo(() => {
     let filtered = interviews;
+    
+    // 1. Apply basic filters
     if (selectedRecruiterId) filtered = filtered.filter(i => i.recruiterId === selectedRecruiterId);
     if (statusFilter !== "all") filtered = filtered.filter(i => i.status === statusFilter);
     if (priorityFilter !== "all") filtered = filtered.filter(i => i.priority === priorityFilter);
@@ -225,12 +227,33 @@ export default function RecruiterSchedules() {
         i.candidateName.toLowerCase().includes(q) || i.interviewId.toLowerCase().includes(q)
       );
     }
+    
+    // 2. Apply Stat filters
     const now = new Date();
     if (activeStatFilter === 'upcoming') filtered = filtered.filter(i => new Date(i.interviewDate) >= now);
     if (activeStatFilter === 'highPriority') filtered = filtered.filter(i => i.priority === 'high');
     if (activeStatFilter === 'completed') filtered = filtered.filter(i => new Date(i.interviewDate) < now);
     if (activeStatFilter === 'today') filtered = filtered.filter(i => new Date(i.interviewDate).toDateString() === now.toDateString());
-    return filtered;
+
+    // 3. DEDUPLICATION LOGIC: Keep only the latest interview per candidate
+    // This solves the issue of seeing both the old and new interview simultaneously.
+    const latestInterviewsMap = new Map();
+    
+    filtered.forEach(interview => {
+      const candidateId = interview.candidateIdRaw;
+      const existing = latestInterviewsMap.get(candidateId);
+      
+      // If we haven't seen this candidate yet, OR if this interview is more recent than the one stored
+      if (!existing || new Date(interview.interviewDate) > new Date(existing.interviewDate)) {
+        latestInterviewsMap.set(candidateId, interview);
+      }
+    });
+
+    // Convert map back to array and sort by date (newest first)
+    return Array.from(latestInterviewsMap.values()).sort((a: any, b: any) => 
+      new Date(b.interviewDate).getTime() - new Date(a.interviewDate).getTime()
+    );
+
   }, [interviews, selectedRecruiterId, statusFilter, priorityFilter, searchQuery, activeStatFilter]);
 
   const interviewStats = useMemo(() => {

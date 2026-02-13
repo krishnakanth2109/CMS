@@ -41,7 +41,7 @@ interface Candidate {
   position: string;
   status: string;
   email?: string;
-  ctc?: string; // Used as salary
+  ctc?: string;
   joiningDate?: string; 
   clientId?: string; 
 }
@@ -133,10 +133,11 @@ const PrintableInvoice: React.FC<{
       id="invoice-content"
       style={{ 
         width: '210mm',
-        minHeight: '297mm',
+        height: '297mm', // Fixed A4 Height
         margin: '0 auto',
         padding: '0', 
-        position: 'relative'
+        position: 'relative',
+        boxSizing: 'border-box'
       }}>
       
       {/* 1. Header Design */}
@@ -156,108 +157,110 @@ const PrintableInvoice: React.FC<{
         ></div>
       </div>
 
-      <div className="px-12 mt-8">
+      <div className="px-12 mt-4">
         {/* 2. To Address Section */}
-        <div className="mb-8">
-          <p className="font-bold mb-2 text-sm">To,</p>
+        <div className="mb-6">
+          <p className="font-bold mb-1 text-xs">To,</p>
           {selectedClient ? (
-            <div className="text-sm font-bold leading-relaxed">
-              <p>{selectedClient.companyName}</p>
+            <div className="text-xs font-bold leading-relaxed">
+              <p className="uppercase text-sm">{selectedClient.companyName}</p>
               <p className="font-medium text-gray-800 w-2/3">
                 {selectedClient.address || "Address not available"}
               </p>
-              <p className="font-bold">GST : {selectedClient.gstNumber || "N/A"}</p>
+              <p className="font-bold mt-1">GST : {selectedClient.gstNumber || "N/A"}</p>
             </div>
           ) : (
-            <p className="text-red-500 text-sm font-bold">[PLEASE SELECT A CLIENT]</p>
+            <p className="text-red-500 text-xs font-bold">[PLEASE SELECT A CLIENT]</p>
           )}
         </div>
 
-        {/* 3. Date */}
-        <div className="flex justify-end mb-6">
-          <p className="font-bold text-sm">{getOrdinalDate(form.invoiceDate)}</p>
-        </div>
-
-        {/* 4. Subject */}
-        <div className="mb-4">
-          <p className="font-bold text-sm">SUB: Final Invoice</p>
+        <div className="flex justify-between items-end mb-4 border-b border-gray-300 pb-2">
+           <div>
+             <p className="font-bold text-xs">SUB: Final Invoice</p>
+           </div>
+           <div className="text-right">
+             <p className="font-bold text-xs">Date: {getOrdinalDate(form.invoiceDate)}</p>
+             <p className="font-bold text-xs">Invoice No: {form.invoiceNumber}</p>
+           </div>
         </div>
 
         {/* 5. Tax Invoice Title */}
-        <div className="text-center mb-1">
-          <h2 className="font-bold text-sm uppercase">TAX INVOICE</h2>
+        <div className="text-center mb-2">
+          <h2 className="font-bold text-sm uppercase tracking-widest border border-black inline-block px-4 py-1">TAX INVOICE</h2>
         </div>
 
         {/* 6. Main Table */}
-        <div className="relative mb-6">
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-5 z-0">
-             <h1 className="text-6xl font-black uppercase text-gray-500 text-center leading-tight">VAGARIOUS<br/>SOLUTIONS PVT LTD</h1>
-          </div>
-
-          <table className="w-full border-collapse border border-black text-[11px] relative z-10">
+        <div className="relative mb-4">
+          <table className="w-full border-collapse border border-black text-[10px] relative z-10">
             <thead>
-              <tr className="bg-white">
-                <th className="border border-black p-2 text-center font-bold w-[5%]">S.no</th>
-                <th className="border border-black p-2 text-center font-bold w-[20%]">Candidate<br/>Name</th>
-                <th className="border border-black p-2 text-center font-bold w-[15%]">Role</th>
-                <th className="border border-black p-2 text-center font-bold w-[15%]">Joining Date</th>
-                <th className="border border-black p-2 text-center font-bold w-[15%]">Actual<br/>Salary</th>
-                <th className="border border-black p-2 text-center font-bold w-[10%]">Percentage</th>
-                <th className="border border-black p-2 text-center font-bold w-[15%]">Payment</th>
+              <tr className="bg-gray-100">
+                <th className="border border-black p-1 text-center font-bold w-[5%]">S.No</th>
+                <th className="border border-black p-1 text-center font-bold w-[20%]">Candidate Name</th>
+                <th className="border border-black p-1 text-center font-bold w-[15%]">Role</th>
+                <th className="border border-black p-1 text-center font-bold w-[15%]">Joining Date</th>
+                <th className="border border-black p-1 text-center font-bold w-[15%]">Actual Salary</th>
+                <th className="border border-black p-1 text-center font-bold w-[10%]">%</th>
+                <th className="border border-black p-1 text-center font-bold w-[15%]">Payment</th>
               </tr>
             </thead>
             <tbody>
               {form.items.map((item, index) => (
-                <tr key={item.id} className="text-center h-10">
-                  <td className="border border-black p-2">{index + 1}</td>
-                  <td className="border border-black p-2 font-medium">{item.candidateName}</td>
-                  <td className="border border-black p-2">{item.role}</td>
-                  <td className="border border-black p-2">{item.joiningDate}</td>
-                  <td className="border border-black p-2 text-right px-4">{item.actualSalary.toLocaleString('en-IN')}</td>
-                  <td className="border border-black p-2">{item.percentage}%</td>
-                  <td className="border border-black p-2 text-right px-4">{item.payment.toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
+                <tr key={item.id} className="text-center">
+                  <td className="border border-black p-1.5">{index + 1}</td>
+                  <td className="border border-black p-1.5 font-medium">{item.candidateName}</td>
+                  <td className="border border-black p-1.5">{item.role}</td>
+                  <td className="border border-black p-1.5">{item.joiningDate}</td>
+                  <td className="border border-black p-1.5 text-right px-2">{item.actualSalary.toLocaleString('en-IN')}</td>
+                  <td className="border border-black p-1.5">{item.percentage}%</td>
+                  <td className="border border-black p-1.5 text-right px-2">{item.payment.toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
                 </tr>
               ))}
               
-              <tr className="font-bold h-10">
+              <tr className="font-bold bg-gray-50">
                 <td className="border border-black p-2 text-center" colSpan={6}>Total</td>
-                <td className="border border-black p-2 text-right px-4">{form.total.toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
+                <td className="border border-black p-2 text-right px-2">{form.total.toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
               </tr>
             </tbody>
           </table>
         </div>
 
         {/* 7. Amount in Words */}
-        <div className="mb-6 text-sm">
-          ( {numberToWords(Math.round(form.total))} / ...)
+        <div className="mb-6 text-xs italic text-gray-700">
+          Amount in words: <span className="font-bold text-black uppercase">{numberToWords(Math.round(form.total))}</span>
         </div>
 
-        {/* 8. Bank Account Details */}
-        <div className="mb-10 text-xs font-bold leading-loose">
-          <p className="mb-1">Account Details: -</p>
-          <div className="ml-0">
-            <p>Account No.: - {form.bankDetails.accountNumber}</p>
-            <p>Name : {form.bankDetails.accountName}</p>
-            <p>Bank : {form.bankDetails.bankName}</p>
-            <p>Branch : {form.bankDetails.branch}</p>
-            <p>PAN No. : {form.bankDetails.pan}</p>
-            <p>GST : {form.bankDetails.gst}</p>
-          </div>
-        </div>
+        <div className="flex justify-between items-start mt-8">
+            {/* 8. Bank Account Details */}
+            <div className="text-[10px] font-bold leading-relaxed border border-black p-3 w-[45%]">
+              <p className="underline mb-2 uppercase">Bank Account Details</p>
+              <div className="grid grid-cols-3 gap-1">
+                <span className="text-gray-600">Account Name</span> <span className="col-span-2">: {form.bankDetails.accountName}</span>
+                <span className="text-gray-600">Account No</span> <span className="col-span-2">: {form.bankDetails.accountNumber}</span>
+                <span className="text-gray-600">Bank Name</span> <span className="col-span-2">: {form.bankDetails.bankName}</span>
+                <span className="text-gray-600">Branch</span> <span className="col-span-2">: {form.bankDetails.branch}</span>
+                <span className="text-gray-600">IFSC/PAN</span> <span className="col-span-2">: {form.bankDetails.pan}</span>
+                <span className="text-gray-600">GSTIN</span> <span className="col-span-2">: {form.bankDetails.gst}</span>
+              </div>
+            </div>
 
-        {/* 9. Signature Section */}
-        <div className="mt-8 text-xs font-bold">
-          <p className="mb-8">Authorized Signature</p>
-          <div className="w-24 h-12 mb-2 relative">
-             <div className="absolute inset-0 border-b-2 border-blue-900 transform -rotate-12 opacity-50"></div>
-          </div>
-          <p>{form.authorizedSignatory}</p>
-          <p>Vagarious Solutions Pvt Ltd</p>
+            {/* 9. Signature Section */}
+            <div className="text-[10px] font-bold text-center w-[40%] flex flex-col justify-between h-32">
+              <p>For VAGARIOUS SOLUTIONS PVT LTD</p>
+              <div className="flex-1 flex items-center justify-center">
+                 {/* Placeholder for Stamp/Sign */}
+                 {/* <div className="w-20 h-10 border border-dashed border-gray-300"></div> */}
+              </div>
+              <div>
+                <p className="uppercase">{form.authorizedSignatory}</p>
+                <p className="text-[9px] text-gray-500">Authorized Signatory</p>
+              </div>
+            </div>
         </div>
       </div>
 
       {/* 10. Footer Section */}
-      <div className="absolute bottom-0 w-full bg-[#0088CC] text-white py-4 px-12 text-center text-[10px]">
+      <div className="absolute bottom-0 w-full bg-[#0088CC] text-white py-2 px-8 text-center text-[9px]">
+        <p className="font-semibold">Vagarious Solutions Pvt Ltd</p>
         <p>2nd Floor, Spline Arcade, Ayyappa Society Main Rd, Madhapur, Hyderabad, TS 500081</p>
         <p>Ph: +91 8919801095 | Email: ops@vagarioussolutions.com | www.vagarioussolutions.com</p>
       </div>
@@ -303,7 +306,7 @@ const AdminClientInvoice: React.FC = () => {
     'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`
   });
 
-  // 1. Fetch Data from Backend
+  // Fetch Data
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -315,7 +318,6 @@ const AdminClientInvoice: React.FC = () => {
 
         if (resClients.ok) {
           const clientData = await resClients.json();
-          // Map _id to id for consistent usage
           setClients(clientData.map((c: any) => ({ ...c, id: c._id })));
         }
 
@@ -333,36 +335,50 @@ const AdminClientInvoice: React.FC = () => {
     fetchData();
   }, []);
 
-  // Get selected client details
   const selectedClient = useMemo(() => {
     return clients.find(client => client.id === form.clientId);
   }, [form.clientId, clients]);
 
-  // Filter candidates (Only Joined ones, and belonging to selected client if chosen)
   const filteredCandidates = useMemo(() => {
     return candidates.filter(candidate => {
-      // Basic filters
       const isJoined = candidate.status === 'Joined';
       const matchesSearch = 
         candidate.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         candidate.email?.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      // If client selected, filter by client (assuming candidate has clientId field or client Name matches)
-      // Note: Adjust 'client' property matching based on your schema
-      // For this example, we rely on manual selection if linking isn't strict in DB
       return isJoined && matchesSearch;
     });
   }, [candidates, searchTerm]);
 
-  // Recalculate totals
   useEffect(() => {
     const total = form.items.reduce((sum, item) => sum + item.payment, 0);
     setForm(prev => ({ ...prev, subtotal: total, total }));
   }, [form.items]);
 
-  // Handlers
+  // --- Handlers & Validations ---
+
   const handleClientChange = (clientId: string) => {
     setForm(prev => ({ ...prev, clientId }));
+  };
+
+  // Validation: Account Number (Numbers only)
+  const handleAccountNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (/^\d*$/.test(value)) {
+      setForm(prev => ({...prev, bankDetails: {...prev.bankDetails, accountNumber: value}}));
+    }
+  };
+
+  // Validation: Bank Name (Letters and spaces only)
+  const handleBankNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (/^[a-zA-Z\s]*$/.test(value)) {
+      setForm(prev => ({...prev, bankDetails: {...prev.bankDetails, bankName: value}}));
+    }
+  };
+
+  // Validation: Branch (Editable, accepts alphanumeric)
+  const handleBranchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm(prev => ({...prev, bankDetails: {...prev.bankDetails, branch: e.target.value}}));
   };
 
   const handleAddCandidate = (candidate: Candidate) => {
@@ -371,13 +387,8 @@ const AdminClientInvoice: React.FC = () => {
       return;
     }
 
-    // Parse Salary (CTC) - Assuming format like "12 LPA" or just number
     const ctcString = candidate.ctc ? candidate.ctc.replace(/[^0-9.]/g, '') : '0';
-    const ctc = parseFloat(ctcString) * 100000 || 0; // Assuming CTC is in Lakhs, convert to actual value if needed. Or just use as is.
-    // Adjusted logic: If backend stores as '12', treat as 12,00,000 for invoice? 
-    // Usually invoice needs full yearly or monthly salary. 
-    // Let's assume the input 'actualSalary' field on invoice is manually editable anyway.
-    
+    const ctc = parseFloat(ctcString) * 100000 || 0; 
     const defaultPercentage = 8.33; 
     
     const newItem: InvoiceItem = {
@@ -385,7 +396,7 @@ const AdminClientInvoice: React.FC = () => {
       candidateName: candidate.name,
       role: candidate.position || "N/A",
       joiningDate: candidate.joiningDate ? new Date(candidate.joiningDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-      actualSalary: ctc, // Default value
+      actualSalary: ctc,
       percentage: defaultPercentage,
       payment: Math.round((ctc * defaultPercentage) / 100)
     };
@@ -414,7 +425,6 @@ const AdminClientInvoice: React.FC = () => {
     }));
   };
 
-  // Manual Add Item Handler
   const handleManualAdd = () => {
     const newItem: InvoiceItem = {
       id: Date.now().toString(),
@@ -431,7 +441,6 @@ const AdminClientInvoice: React.FC = () => {
   const handlePrint = () => {
     const printContent = document.getElementById('printable-area');
     if (!printContent) return;
-    
     const originalContent = document.body.innerHTML;
     document.body.innerHTML = printContent.innerHTML;
     window.print();
@@ -439,6 +448,7 @@ const AdminClientInvoice: React.FC = () => {
     window.location.reload(); 
   };
 
+  // --- PDF Download Logic (Single Page) ---
   const handleDownload = async () => {
     const element = document.getElementById('invoice-content');
     if (!element) {
@@ -447,11 +457,13 @@ const AdminClientInvoice: React.FC = () => {
     }
 
     setIsDownloading(true);
+    
     const opt = {
       margin: 0,
       filename: `Invoice_${form.invoiceNumber}.pdf`,
-      image: { type: 'jpeg', quality: 1 },
-      html2canvas: { scale: 2, useCORS: true, logging: true },
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      // Force A4 dimensions strictly to avoid overflowing to a second page
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
@@ -531,15 +543,10 @@ const AdminClientInvoice: React.FC = () => {
                           <option value="">-- Choose Client --</option>
                           {clients && clients.length > 0 ? (
                             clients.map(c => (
-                              <option 
-                                key={c.id} 
-                                value={c.id}
-                              >
-                                {c.companyName}
-                              </option>
+                              <option key={c.id} value={c.id}>{c.companyName}</option>
                             ))
                           ) : (
-                            <option disabled>Loading clients or No clients found...</option>
+                            <option disabled>Loading clients...</option>
                           )}
                         </select>
                       </div>
@@ -578,7 +585,7 @@ const AdminClientInvoice: React.FC = () => {
                     </div>
                   </CardHeader>
                   <CardContent className="p-6 space-y-6">
-                    {/* Candidate Search (From Backend) */}
+                    {/* Candidate Search */}
                     <div className="relative">
                       <MagnifyingGlassIcon className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
                       <Input 
@@ -694,12 +701,16 @@ const AdminClientInvoice: React.FC = () => {
                    </CardHeader>
                    <CardContent className="p-4 space-y-3">
                      <div>
-                       <label className="text-xs text-gray-500">Bank Name</label>
-                       <Input value={form.bankDetails.bankName} onChange={(e) => setForm({...form, bankDetails: {...form.bankDetails, bankName: e.target.value}})} className="h-8 text-sm" />
+                       <label className="text-xs text-gray-500">Bank Name (Letters Only)</label>
+                       <Input value={form.bankDetails.bankName} onChange={handleBankNameChange} className="h-8 text-sm" placeholder="e.g. ICICI Bank" />
                      </div>
                      <div>
-                       <label className="text-xs text-gray-500">Account No</label>
-                       <Input value={form.bankDetails.accountNumber} onChange={(e) => setForm({...form, bankDetails: {...form.bankDetails, accountNumber: e.target.value}})} className="h-8 text-sm" />
+                       <label className="text-xs text-gray-500">Account No (Numbers Only)</label>
+                       <Input value={form.bankDetails.accountNumber} onChange={handleAccountNumberChange} className="h-8 text-sm" placeholder="e.g. 1234567890" />
+                     </div>
+                     <div>
+                       <label className="text-xs text-gray-500">Branch Name</label>
+                       <Input value={form.bankDetails.branch} onChange={handleBranchChange} className="h-8 text-sm" />
                      </div>
                      <div>
                        <label className="text-xs text-gray-500">PAN No</label>

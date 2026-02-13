@@ -1,5 +1,5 @@
 import Message from '../models/Message.js';
-import User from '../models/User.js'; // Import User to fetch names
+import User from '../models/User.js';
 
 // @desc    Get messages for a user (either Admin or Recruiter)
 // @route   GET /api/messages
@@ -16,6 +16,7 @@ export const getMessages = async (req, res) => {
         ]
       };
     } else {
+      // For recruiters, match by ID or Username or Broadcasts
       query = {
         $or: [
           { to: id },
@@ -27,25 +28,29 @@ export const getMessages = async (req, res) => {
       };
     }
 
-    // Fetch messages
     const messages = await Message.find(query).sort({ createdAt: -1 });
 
-    // Enhance messages with names by looking up IDs
-    // Note: This is a manual populate because 'from'/'to' can be 'admin' string or ObjectId
+    // Enhance messages with names
     const enhancedMessages = await Promise.all(messages.map(async (msg) => {
       let fromName = msg.from;
       let toName = msg.to;
 
-      // If 'from' looks like an ID, find the user
+      // Resolve Sender Name
       if (msg.from !== 'admin' && msg.from.length === 24) {
         const user = await User.findById(msg.from).select('name');
         if (user) fromName = user.name;
+      } else if (msg.from === 'admin') {
+        fromName = 'Admin';
       }
 
-      // If 'to' looks like an ID, find the user
+      // Resolve Recipient Name
       if (msg.to !== 'admin' && msg.to !== 'all' && msg.to.length === 24) {
         const user = await User.findById(msg.to).select('name');
         if (user) toName = user.name;
+      } else if (msg.to === 'admin') {
+        toName = 'Admin';
+      } else if (msg.to === 'all') {
+        toName = 'Everyone';
       }
 
       return {
@@ -61,11 +66,12 @@ export const getMessages = async (req, res) => {
   }
 };
 
-// @desc    Send a message (Persist to DB)
+// @desc    Send a message
 // @route   POST /api/messages
 export const sendMessage = async (req, res) => {
   try {
     const { to, subject, content } = req.body;
+    // If admin, sender is 'admin', else user ID
     const from = req.user.role === 'admin' ? 'admin' : req.user.id;
 
     const message = await Message.create({
@@ -75,14 +81,32 @@ export const sendMessage = async (req, res) => {
       content
     });
     
-    // Add names for immediate frontend display
+    // 1. Resolve Sender Name
     let fromName = from;
-    if(from !== 'admin') {
-        const user = await User.findById(from);
-        if(user) fromName = user.name;
+    if (from === 'admin') {
+      fromName = 'Admin';
+    } else {
+      const user = await User.findById(from).select('name');
+      if (user) fromName = user.name;
     }
 
-    res.status(201).json({ ...message.toObject(), fromName });
+    // 2. Resolve Recipient Name (Fix: Added this logic)
+    let toName = to;
+    if (to === 'admin') {
+      toName = 'Admin';
+    } else if (to === 'all') {
+      toName = 'Everyone';
+    } else if (to.length === 24) {
+      const user = await User.findById(to).select('name');
+      if (user) toName = user.name;
+    }
+
+    // Return full object with names so UI updates immediately
+    res.status(201).json({ 
+      ...message.toObject(), 
+      fromName,
+      toName 
+    });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -100,7 +124,7 @@ export const updateMessage = async (req, res) => {
 
     // Only Admin or Sender can edit
     if (req.user.role !== 'admin' && message.from !== req.user.id) {
-      return res.status(401).json({ message: 'Not authorized to edit this message' });
+      return res.status(401).json({ message: 'Not authorized' });
     }
 
     message.subject = req.body.subject || message.subject;
@@ -124,8 +148,9 @@ export const deleteMessage = async (req, res) => {
     }
 
     // Only Admin or Sender can delete
+    // Note: Recipient cannot delete message from DB, only Sender/Admin
     if (req.user.role !== 'admin' && message.from !== req.user.id) {
-      return res.status(401).json({ message: 'Not authorized to delete this message' });
+      return res.status(401).json({ message: 'Not authorized' });
     }
 
     await message.deleteOne();

@@ -22,4 +22,5 @@ const clearCandidates = async () => {
   }
 };
 
+
 clearCandidates();

@@ -3,113 +3,115 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RecruiterHub - Professional Recruiting Dashboard</title>
+
+    <title>RecruiterHub – Professional Recruiting Dashboard</title>
+
+    <!-- SEO -->
     <meta
       name="description"
-      content="Advanced recruiting dashboard with  management, performance analytics, and real-time reporting for recruiters and administrators"
+      content="Advanced recruiting dashboard with candidate management, recruiter analytics, and real-time reporting."
     />
     <meta name="author" content="RecruiterHub" />
     <meta
       name="keywords"
-      content="recruiting dashboard,  management, recruiter analytics, hiring platform, recruitment software"
+      content="recruiting dashboard, candidate management, recruiter analytics, hiring platform, recruitment software"
     />
 
-    <meta property="og:title" content="RecruiterHub - Professional Recruiting Dashboard" />
+    <!-- Theme -->
+    <meta name="theme-color" content="#0f172a" />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="RecruiterHub – Professional Recruiting Dashboard" />
     <meta
       property="og:description"
-      content="Advanced recruiting dashboard with  management, performance analytics, and real-time reporting"
+      content="Advanced recruiting dashboard with candidate management and performance analytics."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    <meta property="og:image" content="/og-image.png" />
 
+    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="RecruiterHub - Professional Recruiting Dashboard" />
+    <meta name="twitter:title" content="RecruiterHub – Professional Recruiting Dashboard" />
     <meta
       name="twitter:description"
-      content="Advanced recruiting dashboard with  management and analytics"
+      content="Advanced recruiting dashboard with candidate management and analytics."
     />
-    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    <meta name="twitter:image" content="/og-image.png" />
+
+    <!-- Favicon -->
+    <link rel="icon" href="/favicon.ico" />
 
     <style>
       /* === Splash Screen Styling === */
       #splash-screen {
         position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: white;
+        inset: 0;
+        background: #0f172a;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         z-index: 9999;
-        transition: opacity 0.8s ease;
+        transition: opacity 0.6s ease;
       }
 
       .splash-logo {
-        width: 350px;
+        width: 240px;
         height: auto;
-        animation: pulse 1.5s infinite ease-in-out;
+        animation: pulse 1.4s infinite ease-in-out;
       }
 
       .splash-text {
-        margin-top: 20px;
-        font-size: 1.5rem;
+        margin-top: 16px;
+        font-size: 1.2rem;
         font-weight: 600;
-        color: #ffffff;
+        color: #e5e7eb;
         letter-spacing: 1px;
         opacity: 0;
-        animation: fadeIn 1.2s forwards ease-in-out 2s;
+        animation: fadeIn 1s forwards ease-in-out 1.2s;
       }
 
       @keyframes pulse {
-        0% {
-          transform: scale(1);
-          opacity: 1;
-        }
-        50% {
-          transform: scale(1.1);
-          opacity: 0.9;
-        }
-        100% {
-          transform: scale(1);
-          opacity: 1;
-        }
+        0% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.08); opacity: 0.9; }
+        100% { transform: scale(1); opacity: 1; }
       }
 
       @keyframes fadeIn {
-        to {
-          opacity: 1;
-        }
+        to { opacity: 1; }
       }
     </style>
   </head>
 
   <body>
-    <!-- === Splash Screen === -->
+    <!-- Splash Screen -->
     <div id="splash-screen">
-      <img src="./public/Logo1.png" alt="Logo" class="splash-logo" />
-      <div class="splash-text">CMS- Vagarious</div>
+      <img
+        src="/logo.png"
+        alt="RecruiterHub Logo"
+        class="splash-logo"
+      />
+      <div class="splash-text">CMS – Vagarious</div>
     </div>
 
-    <!-- === Main App Root === -->
+    <!-- React Root -->
     <div id="root" style="display: none;"></div>
 
-    <!-- === Scripts === -->
+    <!-- Vite Entry -->
     <script type="module" src="/src/main.tsx"></script>
 
     <script>
-      // Wait for React app to load, then hide splash
-      window.addEventListener("load", () => {
+      window.addEventListener("DOMContentLoaded", () => {
         const splash = document.getElementById("splash-screen");
         const root = document.getElementById("root");
 
-        splash.style.opacity = "0";
         setTimeout(() => {
-          splash.style.display = "none";
-          root.style.display = "block";
-        }, 800); // matches fade transition
+          splash.style.opacity = "0";
+          setTimeout(() => {
+            splash.style.display = "none";
+            root.style.display = "block";
+          }, 600);
+        }, 1200);
       });
     </script>
   </body>

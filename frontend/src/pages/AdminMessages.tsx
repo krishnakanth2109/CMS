@@ -123,15 +123,25 @@ export default function AdminMessages() {
     }
   };
 
-  const handleDeleteMessage = async (id: string) => {
-    if(!confirm("Delete this message?")) return;
+  const handleDeleteMessage = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation(); // Prevent selecting the message while deleting
+    if(!confirm("Are you sure you want to delete this message?")) return;
+    
     try {
-      await fetch(`${API_URL}/messages/${id}`, { method: 'DELETE', headers: getAuthHeader() });
-      setMessages(prev => prev.filter(m => m._id !== id));
-      if (selectedMessage?._id === id) setSelectedMessage(null);
-      toast({ title: "Deleted", description: "Message removed" });
+      const res = await fetch(`${API_URL}/messages/${id}`, { 
+        method: 'DELETE', 
+        headers: getAuthHeader() 
+      });
+
+      if (res.ok) {
+        setMessages(prev => prev.filter(m => m._id !== id));
+        if (selectedMessage?._id === id) setSelectedMessage(null);
+        toast({ title: "Deleted", description: "Message removed successfully" });
+      } else {
+        throw new Error("Failed to delete");
+      }
     } catch (error) {
-      toast({ title: "Error", variant: "destructive" });
+      toast({ title: "Error", description: "Could not delete message", variant: "destructive" });
     }
   };
 
@@ -162,6 +172,9 @@ export default function AdminMessages() {
     return matchesTab && matchesSearch;
   });
 
+  // Calculate Inbox Count
+  const inboxCount = messages.filter(m => m.to === 'admin' && m.from !== 'admin').length;
+
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
       <DashboardSidebar />
@@ -169,7 +182,10 @@ export default function AdminMessages() {
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Top Bar */}
         <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Communications</h1>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
+            Communications
+            {inboxCount > 0 && <span className="text-sm font-normal text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{inboxCount} New</span>}
+          </h1>
           <Button onClick={() => { setIsComposing(true); setRecipient(''); setSubject(''); setContent(''); }} className="bg-blue-600 hover:bg-blue-700 text-white shadow-md">
             <Plus className="w-4 h-4 mr-2" /> Compose
           </Button>
@@ -194,9 +210,14 @@ export default function AdminMessages() {
               <div className="flex p-1 bg-gray-100 dark:bg-gray-700 rounded-lg">
                 <button 
                   onClick={() => { setActiveTab('inbox'); setIsComposing(false); }}
-                  className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'inbox' ? 'bg-white dark:bg-gray-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}
+                  className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all flex items-center justify-center gap-2 ${activeTab === 'inbox' ? 'bg-white dark:bg-gray-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}
                 >
                   Inbox
+                  {inboxCount > 0 && (
+                    <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
+                      {inboxCount}
+                    </span>
+                  )}
                 </button>
                 <button 
                   onClick={() => { setActiveTab('sent'); setIsComposing(false); }}
@@ -216,18 +237,31 @@ export default function AdminMessages() {
                   <div 
                     key={msg._id}
                     onClick={() => { setSelectedMessage(msg); setIsComposing(false); }}
-                    className={`p-4 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${selectedMessage?._id === msg._id ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-l-blue-500' : ''}`}
+                    className={`group p-4 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${selectedMessage?._id === msg._id ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-l-blue-500' : ''}`}
                   >
                     <div className="flex justify-between mb-1">
-                      <span className="font-semibold text-gray-900 dark:text-white text-sm">
+                      <span className="font-semibold text-gray-900 dark:text-white text-sm truncate pr-2">
                         {activeTab === 'inbox' ? (msg.fromName || getRecruiterName(msg.from)) : `To: ${msg.toName || getRecruiterName(msg.to)}`}
                       </span>
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-gray-400 whitespace-nowrap">
                         {format(new Date(msg.createdAt), 'MMM d')}
                       </span>
                     </div>
-                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{msg.subject}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">{msg.content}</p>
+                    <div className="flex justify-between items-start">
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{msg.subject}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">{msg.content}</p>
+                        </div>
+                        
+                        {/* DELETE BUTTON IN LIST VIEW (Visible on Hover) */}
+                        <button 
+                            onClick={(e) => handleDeleteMessage(e, msg._id)}
+                            className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full text-red-500 transition-opacity ml-2"
+                            title="Delete"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -335,7 +369,7 @@ export default function AdminMessages() {
                               <Reply className="w-4 h-4 mr-2"/> Reply
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem onClick={() => handleDeleteMessage(selectedMessage._id)} className="text-red-600">
+                          <DropdownMenuItem onClick={(e) => handleDeleteMessage(e, selectedMessage._id)} className="text-red-600">
                             <Trash2 className="w-4 h-4 mr-2"/> Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>

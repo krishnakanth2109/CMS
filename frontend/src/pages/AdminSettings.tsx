@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
-import { Lock, User, Mail, Loader2 } from 'lucide-react';
+import { Lock, User, Mail, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 // Default to /api, but fallback safely
@@ -15,6 +15,10 @@ export default function AdminSettings() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Password Visibility States
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -120,8 +124,10 @@ export default function AdminSettings() {
         description: "Your profile has been updated successfully.",
       });
 
-      // Clear password fields
+      // Clear password fields and reset visibility
       setFormData(prev => ({ ...prev, currentPassword: '', newPassword: '', confirmPassword: '' }));
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
 
     } catch (error: any) {
       toast({
@@ -204,25 +210,48 @@ export default function AdminSettings() {
               <CardDescription>Update your password (leave blank to keep current)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* New Password Field with Eye Icon */}
               <div className="space-y-2">
                 <Label htmlFor="newPassword">New Password</Label>
-                <Input 
-                  id="newPassword" 
-                  type="password" 
-                  value={formData.newPassword} 
-                  onChange={handleChange} 
-                  placeholder="Enter new password"
-                />
+                <div className="relative">
+                  <Input 
+                    id="newPassword" 
+                    type={showNewPassword ? "text" : "password"} 
+                    value={formData.newPassword} 
+                    onChange={handleChange} 
+                    placeholder="Enter new password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
+
+              {/* Confirm Password Field with Eye Icon */}
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                <Input 
-                  id="confirmPassword" 
-                  type="password" 
-                  value={formData.confirmPassword} 
-                  onChange={handleChange} 
-                  placeholder="Confirm new password"
-                />
+                <div className="relative">
+                  <Input 
+                    id="confirmPassword" 
+                    type={showConfirmPassword ? "text" : "password"} 
+                    value={formData.confirmPassword} 
+                    onChange={handleChange} 
+                    placeholder="Confirm new password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
             </CardContent>
           </Card>

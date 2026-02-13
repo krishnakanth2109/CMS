@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Lock, Loader2 } from 'lucide-react';
+import { Lock, Loader2, Eye, EyeOff } from 'lucide-react'; // Added Eye icons
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -12,12 +12,20 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function RecruiterSettings() {
   const { toast } = useToast();
-  const { user } = useAuth(); // Get current user context if needed
+  // const { user } = useAuth(); // Unused currently, but kept if needed later
   
+  // State for password values
   const [passwords, setPasswords] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: ''
+  });
+
+  // State for visibility toggles
+  const [showPasswords, setShowPasswords] = useState({
+    current: false,
+    new: false,
+    confirm: false
   });
   
   const [loading, setLoading] = useState(false);
@@ -30,6 +38,11 @@ export default function RecruiterSettings() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
     setPasswords(prev => ({ ...prev, [id]: value }));
+  };
+
+  // Helper to toggle visibility for a specific field
+  const toggleVisibility = (field: keyof typeof showPasswords) => {
+    setShowPasswords(prev => ({ ...prev, [field]: !prev[field] }));
   };
 
   const handleUpdatePassword = async () => {
@@ -69,9 +82,7 @@ export default function RecruiterSettings() {
         headers: getAuthHeader(),
         body: JSON.stringify({
           password: passwords.newPassword
-          // Note: In a real production app, you should also send currentPassword 
-          // to the backend for verification before changing it. 
-          // Your current backend controller supports direct update if authenticated.
+          // Note: Send currentPassword here if your backend requires verification
         })
       });
 
@@ -129,38 +140,89 @@ export default function RecruiterSettings() {
             </CardHeader>
             <CardContent className="space-y-4">
               
-              {/* Current Password (Optional based on your backend logic, but good for UI) */}
+              {/* Current Password */}
               <div className="space-y-2">
                 <Label htmlFor="currentPassword">Current Password</Label>
-                <Input 
-                  id="currentPassword" 
-                  type="password" 
-                  value={passwords.currentPassword}
-                  onChange={handleChange}
-                  placeholder="Enter current password"
-                />
+                <div className="relative">
+                  <Input 
+                    id="currentPassword" 
+                    type={showPasswords.current ? "text" : "password"} 
+                    value={passwords.currentPassword}
+                    onChange={handleChange}
+                    placeholder="Enter current password"
+                    className="pr-10" // Padding right to prevent text overlap with icon
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-muted-foreground"
+                    onClick={() => toggleVisibility('current')}
+                  >
+                    {showPasswords.current ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* New Password */}
                 <div className="space-y-2">
                   <Label htmlFor="newPassword">New Password</Label>
-                  <Input 
-                    id="newPassword" 
-                    type="password" 
-                    value={passwords.newPassword}
-                    onChange={handleChange}
-                    placeholder="Enter new password"
-                  />
+                  <div className="relative">
+                    <Input 
+                      id="newPassword" 
+                      type={showPasswords.new ? "text" : "password"}
+                      value={passwords.newPassword}
+                      onChange={handleChange}
+                      placeholder="Enter new password"
+                      className="pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-muted-foreground"
+                      onClick={() => toggleVisibility('new')}
+                    >
+                      {showPasswords.new ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
+
+                {/* Confirm Password */}
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                  <Input 
-                    id="confirmPassword" 
-                    type="password" 
-                    value={passwords.confirmPassword}
-                    onChange={handleChange}
-                    placeholder="Confirm new password"
-                  />
+                  <div className="relative">
+                    <Input 
+                      id="confirmPassword" 
+                      type={showPasswords.confirm ? "text" : "password"}
+                      value={passwords.confirmPassword}
+                      onChange={handleChange}
+                      placeholder="Confirm new password"
+                      className="pr-10"
+                    />
+                     <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-muted-foreground"
+                      onClick={() => toggleVisibility('confirm')}
+                    >
+                      {showPasswords.confirm ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
 

@@ -1,10 +1,12 @@
-
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 // Routes
 import authRoutes from './routes/authRoutes.js';
@@ -16,6 +18,16 @@ import interviewRoutes from './routes/interviewRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 
 dotenv.config();
+
+// Fix for __dirname in ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Ensure uploads directory exists
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -49,10 +61,12 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
-// --- CRITICAL FIX: Increased Limit for Image Uploads ---
+// --- CRITICAL FIX: Increased Limit for Image/File Uploads ---
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-// --------------------------------------------------------
+
+// --- Serve Uploaded Files Statically ---
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Database Connection
 const connectDB = async () => {
@@ -93,13 +107,13 @@ io.on('connection', (socket) => {
 // --- Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/recruiters', recruiterRoutes);
-app.use('/api/candidates', candidateRoutes);
+app.use('/api/candidates', candidateRoutes); // This route will handle the upload
 app.use('/api/clients', clientRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/messages', messageRoutes);
 
-// Fallback Routes
+// Fallback Routes (for legacy support if needed)
 app.use('/auth', authRoutes);
 app.use('/recruiters', recruiterRoutes);
 app.use('/candidates', candidateRoutes);
@@ -109,12 +123,12 @@ app.use('/interviews', interviewRoutes);
 app.use('/messages', messageRoutes);
 
 app.get('/', (req, res) => {
-  res.json({ message: 'API is running with Socket.IO...' });
+  res.json({ message: 'API is running with Socket.IO & File Uploads...' });
 });
 
 // Error Handler
 app.use((err, req, res, next) => {
-  console.error("Server Error Log:", err.stack); // Added better logging
+  console.error("Server Error Log:", err.stack);
   res.status(500).json({ error: 'Internal Server Error', details: err.message });
 });
 

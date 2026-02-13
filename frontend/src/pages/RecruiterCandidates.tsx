@@ -18,88 +18,215 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
-  Plus, Search, Edit, Filter, Download, Phone, Mail,
-  Building, Briefcase, Loader2, Ban, List, LayoutGrid
+  Plus, Search, Edit, Download, Phone, Mail,
+  Building, Briefcase, Loader2, Ban, List, LayoutGrid,
+  Calendar, GraduationCap, Award, UserCircle, Star, Target, 
+  MessageSquare, Linkedin, MessageCircle, Eye, IndianRupee, Upload, FileUp, FileText
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { Candidate, Job } from '@/types';
+import { Candidate, Job } from '@/types'; 
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-// Extend types for backend compatibility
 interface BackendCandidate extends Candidate {
   _id: string;
+  candidateId?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  linkedin?: string;
+  currentLocation?: string;
+  preferredLocation?: string;
+  industry?: string;
+  currentCompany?: string;
+  noticePeriod?: string;
+  education?: string;
+  source?: string;
+  rating?: number;
+  assignedJobId?: string;
+  active?: boolean;
   dateAdded?: string;
-  assignedJobId?: string | { _id: string; position: string; clientName: string }; 
+  remarks?: string;
+  notes?: string;
+  rejectionReason?: string;
+  recruiterId?: string | { _id: string, name: string };
+  recruiterName?: string;
+  
+  // New Fields
+  offersInHand?: boolean;
+  offerPackage?: string;
+  servingNoticePeriod?: boolean;
+  noticePeriodDays?: string;
 }
 
 interface BackendJob extends Job {
   _id: string;
   deadline?: string;
+  position: string;
+  clientName: string;
+}
+
+interface BackendClient {
+  _id: string;
+  companyName: string;
+}
+
+interface CandidateFormData {
+  name: string; email: string; contact: string; dateOfBirth: string; gender: string; linkedin: string;
+  currentLocation: string; preferredLocation: string;
+  position: string; client: string; industry: string; currentCompany: string; skills: string;
+  totalExperience: string; relevantExperience: string;
+  education: string;
+  ctc: string; ectc: string; 
+  
+  // Notice Period & Offers
+  noticePeriod: string; // Legacy text field
+  servingNoticePeriod: string; // 'true' | 'false' for Select
+  noticePeriodDays: string;
+  offersInHand: string; // 'true' | 'false' for Select
+  offerPackage: string;
+
+  source: string; status: string; rating: string; assignedJobId: string; dateAdded: string;
+  notes: string; remarks: string;
+  active: boolean;
 }
 
 export default function RecruiterCandidates() {
   const { user } = useAuth();
   const { toast } = useToast();
   
-  // Data State
   const [candidates, setCandidates] = useState<BackendCandidate[]>([]);
   const [jobs, setJobs] = useState<BackendJob[]>([]);
+  const [clients, setClients] = useState<BackendClient[]>([]); 
   const [loading, setLoading] = useState(true);
+  const [viewingCandidate, setViewingCandidate] = useState<BackendCandidate | null>(null);
+  const [isParsingResume, setIsParsingResume] = useState(false);
 
-  // UI & Filter State
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null);
+  const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
   
-  // Modal State
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Validation State
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Form State
-  const initialFormState = {
-    name: '', position: '', skills: '', client: '', contact: '', email: '',
-    status: 'Submitted', notes: '', totalExperience: '', relevantExperience: '',
-    ctc: '', ectc: '', noticePeriod: '', assignedJobId: '', 
-    dateAdded: new Date().toISOString().split('T')[0], active: true
-  };
-  const [formData, setFormData] = useState(initialFormState);
+  const standardSources = ['Portal', 'LinkedIn', 'Referral', 'Direct', 'Agency'];
+  const [isCustomSource, setIsCustomSource] = useState(false);
 
-  // --- 1. Fetch Data ---
+  const initialFormState: CandidateFormData = {
+    name: '', email: '', contact: '', dateOfBirth: '', gender: '', linkedin: '',
+    currentLocation: '', preferredLocation: '',
+    position: '', client: '', industry: '', currentCompany: '', skills: '',
+    totalExperience: '', relevantExperience: '',
+    education: '',
+    ctc: '', ectc: '', 
+    
+    noticePeriod: '',
+    servingNoticePeriod: 'false',
+    noticePeriodDays: '',
+    offersInHand: 'false',
+    offerPackage: '',
+
+    source: 'Portal', status: 'Submitted', rating: '0', assignedJobId: '',
+    dateAdded: new Date().toISOString().split('T')[0],
+    notes: '', remarks: '',
+    active: true
+  };
+  
+  const [formData, setFormData] = useState<CandidateFormData>(initialFormState);
+
+  // --- Resume Upload Handler ---
+  const handleResumeUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
+    if (!allowedTypes.includes(file.type)) {
+      toast({ title: 'Invalid File Type', description: 'Please upload a PDF or DOC/DOCX file', variant: 'destructive' });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: 'File Too Large', description: 'Resume must be less than 5MB', variant: 'destructive' });
+      return;
+    }
+
+    setIsParsingResume(true);
+
+    try {
+      const uploadFormData = new FormData();
+      uploadFormData.append('resume', file);
+
+      const response = await fetch(`${API_URL}/candidates/parse-resume`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
+        body: uploadFormData
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) throw new Error(result.message || 'Failed to parse resume');
+
+      if (result.success && result.data) {
+        const cleanContact = result.data.contact ? result.data.contact.replace(/\D/g, '').slice(0, 10) : '';
+        const cleanTotalExp = result.data.totalExperience ? String(result.data.totalExperience).replace(/[^0-9.]/g, '') : '';
+
+        setFormData(prev => ({
+          ...prev,
+          name: result.data.name || prev.name,
+          email: result.data.email || prev.email,
+          contact: cleanContact || prev.contact,
+          skills: result.data.skills || prev.skills,
+          totalExperience: cleanTotalExp || prev.totalExperience,
+          education: result.data.education || prev.education,
+          currentLocation: result.data.currentLocation || prev.currentLocation,
+          currentCompany: result.data.currentCompany || prev.currentCompany,
+        }));
+
+        toast({ title: 'Resume Parsed Successfully', description: 'Form fields have been auto-filled.', duration: 5000 });
+      }
+
+    } catch (error: any) {
+      console.error('Resume parsing error:', error);
+      toast({ title: 'Parsing Failed', description: error.message || 'Could not extract data', variant: 'destructive' });
+    } finally {
+      setIsParsingResume(false);
+      event.target.value = '';
+    }
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
       const headers = { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` };
 
-      const [candRes, jobRes] = await Promise.all([
+      const [candRes, jobRes, clientRes] = await Promise.all([
         fetch(`${API_URL}/candidates`, { headers }),
-        fetch(`${API_URL}/jobs`, { headers })
+        fetch(`${API_URL}/jobs`, { headers }),
+        fetch(`${API_URL}/clients`, { headers })
       ]);
 
-      if (candRes.ok && jobRes.ok) {
+      if (candRes.ok && jobRes.ok && clientRes.ok) {
         const allCandidates = await candRes.json();
         const allJobs = await jobRes.json();
+        const allClients = await clientRes.json();
 
-        // Filter for current recruiter and Active candidates only
-        const myCandidates = allCandidates.filter((c: any) => 
-          (c.recruiterId === user?.id || c.recruiterId?._id === user?.id) && c.active !== false
+        const myCandidates = allCandidates.filter((c: BackendCandidate) =>
+          (c.recruiterId === user?.id || (typeof c.recruiterId === 'object' && (c.recruiterId as any)._id === user?.id))
         );
-        
-        const myJobs = allJobs.filter((j: any) => 
-          j.primaryRecruiter === user?.name || j.secondaryRecruiter === user?.name
-        );
+
+        myCandidates.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
         setCandidates(myCandidates);
-        setJobs(myJobs);
+        setJobs(allJobs);
+        setClients(allClients);
       }
     } catch (error) {
-      console.error("Fetch error:", error);
       toast({ variant: "destructive", title: "Error", description: "Failed to load data" });
     } finally {
       setLoading(false);
@@ -110,52 +237,89 @@ export default function RecruiterCandidates() {
     fetchData();
   }, []);
 
-  // --- Validation ---
+  const uniquePositions = useMemo(() => {
+    const positions = jobs.map(j => j.position).filter(Boolean);
+    return Array.from(new Set(positions));
+  }, [jobs]);
+
+  const handleInputChange = (key: string, value: string) => {
+    let newValue = value;
+
+    // 1. Contact: Numbers only, limit to 10
+    if (key === 'contact') {
+      newValue = value.replace(/\D/g, ''); 
+      if (newValue.length > 10) return; 
+    }
+
+    // 2. Experience & CTC
+    if (['totalExperience', 'relevantExperience', 'ctc', 'ectc'].includes(key)) {
+       if (!/^\d*\.?\d*$/.test(value)) return;
+    }
+
+    setFormData(prev => ({ ...prev, [key]: newValue }));
+    if (errors[key]) setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
+  };
+
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     const data = formData;
 
-    if (!data.name.trim()) newErrors.name = "Name is required";
-    else if (data.name.length < 2) newErrors.name = "Name too short";
+    // 1. Name: Uppercase first letter + Alphabets check
+    if (!data.name.trim()) {
+      newErrors.name = "Name is required";
+    } else if (!/^[A-Z][a-zA-Z\s]*$/.test(data.name)) {
+      newErrors.name = "Name must start with Uppercase and contain alphabets only";
+    }
+    
+    // 2. Email
+    const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!data.email.trim()) {
+      newErrors.email = "Email is required";
+    } else if (!emailRegex.test(data.email)) {
+      newErrors.email = "Invalid email format";
+    }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!data.email.trim()) newErrors.email = "Email is required";
-    else if (!emailRegex.test(data.email)) newErrors.email = "Invalid email";
-
-    const phoneRegex = /^[0-9+\s-]{10,15}$/;
-    if (!data.contact.trim()) newErrors.contact = "Phone is required";
-    else if (!phoneRegex.test(data.contact)) newErrors.contact = "Invalid phone format";
+    // 3. Contact
+    if (!data.contact.trim()) {
+      newErrors.contact = "Phone is required";
+    } else if (data.contact.length !== 10) {
+      newErrors.contact = "Phone must be exactly 10 digits";
+    }
 
     if (!data.position.trim()) newErrors.position = "Position is required";
     if (!data.client.trim()) newErrors.client = "Client is required";
     if (!data.skills.toString().trim()) newErrors.skills = "Skills are required";
 
-    // Numeric checks if present
-    if (data.totalExperience && isNaN(parseFloat(data.totalExperience))) newErrors.totalExperience = "Number expected";
-    if (data.relevantExperience && isNaN(parseFloat(data.relevantExperience))) newErrors.relevantExperience = "Number expected";
-    if (data.ctc && isNaN(parseFloat(data.ctc))) newErrors.ctc = "Number expected";
-    if (data.ectc && isNaN(parseFloat(data.ectc))) newErrors.ectc = "Number expected";
+    if (isCustomSource && !data.source.trim()) newErrors.source = "Please specify source";
+
+    // 4. Conditional Validations
+    if (data.servingNoticePeriod === 'true' && !data.noticePeriodDays.trim()) {
+      newErrors.noticePeriodDays = "Please specify days";
+    }
+    if (data.offersInHand === 'true' && !data.offerPackage.trim()) {
+      newErrors.offerPackage = "Please specify package amount";
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // --- 2. Helper Functions ---
   const getFilteredCandidates = useMemo(() => {
     return candidates.filter(c => {
       const searchMatch = 
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (c.candidateId && c.candidateId.toLowerCase().includes(searchTerm.toLowerCase()));
+        c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.candidateId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (Array.isArray(c.skills) && c.skills.some(skill => skill.toLowerCase().includes(searchTerm.toLowerCase())));
 
       const statusMatch = statusFilter === 'all' || c.status === statusFilter;
 
       let statCardMatch = true;
       if (activeStatFilter) {
         if (activeStatFilter === 'submitted') statCardMatch = c.status === 'Submitted';
-        if (activeStatFilter === 'interview') statCardMatch = c.status.includes('Interview');
+        if (activeStatFilter === 'interview') statCardMatch = c.status?.includes('Interview');
         if (activeStatFilter === 'offer') statCardMatch = c.status === 'Offer';
+        if (activeStatFilter === 'active') statCardMatch = c.active !== false;
       }
 
       return searchMatch && statusMatch && statCardMatch;
@@ -164,65 +328,93 @@ export default function RecruiterCandidates() {
 
   const stats = useMemo(() => ({
     total: candidates.length,
+    active: candidates.filter(c => c.active !== false).length,
     submitted: candidates.filter(c => c.status === 'Submitted').length,
-    interview: candidates.filter(c => c.status.includes('Interview')).length,
+    interview: candidates.filter(c => c.status?.includes('Interview')).length,
     offer: candidates.filter(c => c.status === 'Offer').length,
     joined: candidates.filter(c => c.status === 'Joined').length,
     rejected: candidates.filter(c => c.status === 'Rejected').length
   }), [candidates]);
 
-  const getStatusBadgeVariant = (status: string) => {
-    if (status === 'Offer' || status === 'Joined') return 'default'; 
+  const handleExport = () => {
+    if (getFilteredCandidates.length === 0) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    const headers = ["Candidate ID", "Name", "Email", "Phone", "Client", "Position", "Status", "Total Exp", "Current CTC", "Expected CTC", "Skills", "Date Added"];
+    const escapeCsv = (str: string | undefined | null) => str ? `"${String(str).replace(/"/g, '""')}"` : '""';
+
+    const rows = getFilteredCandidates.map(c => [
+      escapeCsv(getCandidateId(c)), escapeCsv(c.name), escapeCsv(c.email), escapeCsv(c.contact),
+      escapeCsv(c.client), escapeCsv(c.position), escapeCsv(c.status), escapeCsv(c.totalExperience),
+      escapeCsv(c.ctc), escapeCsv(c.ectc), escapeCsv(Array.isArray(c.skills) ? c.skills.join(', ') : c.skills),
+      escapeCsv(new Date(c.dateAdded || c.createdAt || new Date()).toLocaleDateString())
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `candidates_export_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  const getStatusBadgeVariant = (status: string | undefined) => {
+    if (status === 'Joined' || status === 'Offer') return 'default';
     if (status === 'Rejected') return 'destructive';
-    if (status.includes('Interview')) return 'secondary'; 
+    if (status?.includes('Interview')) return 'secondary';
     return 'outline';
   };
 
   const getInitials = (n: string) => n.split(' ').map(i => i[0]).join('').toUpperCase().substring(0,2);
+  const getCandidateId = (c: BackendCandidate) => c.candidateId || c._id.substring(c._id.length - 6).toUpperCase();
+  const formatSkills = (skills: string | string[] | undefined) => !skills ? 'N/A' : Array.isArray(skills) ? skills.slice(0, 3).join(', ') + (skills.length > 3 ? '...' : '') : skills.length > 50 ? skills.substring(0, 50) + '...' : skills;
+  const formatDate = (dateString?: string) => dateString ? new Date(dateString).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A';
 
-  const getAssignedJobTitle = (candidateJobId: string | any) => {
-    if (!candidateJobId) return 'N/A';
-    if (typeof candidateJobId === 'object' && candidateJobId.position) return `${candidateJobId.position} (${candidateJobId.clientName})`;
-    const job = jobs.find(j => (j._id || j.id) === candidateJobId);
-    return job ? `${job.position} - ${job.clientName}` : 'N/A';
+  const toggleSelectCandidate = (id: string) => setSelectedCandidates(prev => prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]);
+  const selectAllCandidates = () => setSelectedCandidates(selectedCandidates.length === getFilteredCandidates.length ? [] : getFilteredCandidates.map(c => c._id));
+  const getAssignedJobTitle = (jobId?: string) => {
+    if(!jobId) return 'Not Assigned';
+    const job = jobs.find(j => j._id === jobId);
+    return job ? `${job.position} (${job.clientName})` : jobId;
   };
 
-  // --- 3. Handlers ---
-  const handleInputChange = (key: string, value: any) => {
-    setFormData(prev => ({ ...prev, [key]: value }));
-    if (errors[key]) {
-      setErrors(prev => {
-        const n = { ...prev };
-        delete n[key];
-        return n;
-      });
-    }
+  const openViewDialog = (c: BackendCandidate) => {
+    setViewingCandidate(c);
+    setIsViewDialogOpen(true);
   };
 
   const openEditDialog = (c: BackendCandidate) => {
     setErrors({});
-    setSelectedCandidateId(c._id || c.id);
-    const jobIdValue = typeof c.assignedJobId === 'object' && c.assignedJobId !== null 
-      ? c.assignedJobId._id 
-      : (c.assignedJobId || '');
+    setSelectedCandidateId(c._id);
+    const isStandard = standardSources.includes(c.source || 'Portal');
+    setIsCustomSource(!isStandard);
 
     setFormData({
-      name: c.name,
-      position: c.position,
-      skills: Array.isArray(c.skills) ? c.skills.join(', ') : c.skills || '',
-      client: c.client || '',
-      contact: c.contact || '',
-      email: c.email || '',
-      status: c.status,
-      notes: c.notes || '',
-      totalExperience: c.totalExperience || '',
-      relevantExperience: c.relevantExperience || '',
-      ctc: c.ctc || '',
-      ectc: c.ectc || '',
-      noticePeriod: c.noticePeriod || '',
-      assignedJobId: jobIdValue,
+      name: c.name || '', email: c.email || '', contact: c.contact || '',
+      dateOfBirth: c.dateOfBirth ? new Date(c.dateOfBirth).toISOString().split('T')[0] : '',
+      gender: c.gender || '', linkedin: c.linkedin || '',
+      currentLocation: c.currentLocation || '', preferredLocation: c.preferredLocation || '',
+      position: c.position || '', client: c.client || '', industry: c.industry || '',
+      currentCompany: c.currentCompany || '', skills: Array.isArray(c.skills) ? c.skills.join(', ') : c.skills || '',
+      totalExperience: c.totalExperience ? String(c.totalExperience) : '',
+      relevantExperience: c.relevantExperience ? String(c.relevantExperience) : '',
+      education: c.education || '', 
+      ctc: c.ctc ? String(c.ctc) : '', 
+      ectc: c.ectc ? String(c.ectc) : '', 
+      
+      // Map New Fields to String for Select
+      noticePeriod: c.noticePeriod ? String(c.noticePeriod) : '',
+      servingNoticePeriod: c.servingNoticePeriod ? 'true' : 'false',
+      noticePeriodDays: c.noticePeriodDays || '',
+      offersInHand: c.offersInHand ? 'true' : 'false',
+      offerPackage: c.offerPackage || '',
+
+      source: c.source || 'Portal', status: c.status || 'Submitted', rating: c.rating?.toString() || '0',
+      assignedJobId: typeof c.assignedJobId === 'object' ? (c.assignedJobId as any)._id : c.assignedJobId || '',
       dateAdded: c.dateAdded ? new Date(c.dateAdded).toISOString().split('T')[0] : '',
-      active: c.active !== false
+      notes: c.notes || '', remarks: c.remarks || '', active: c.active !== false
     });
     setIsEditDialogOpen(true);
   };
@@ -235,15 +427,15 @@ export default function RecruiterCandidates() {
     
     setIsSubmitting(true);
     try {
-      const headers = { 
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-        'Content-Type': 'application/json'
-      };
+      const headers = { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`, 'Content-Type': 'application/json' };
       
       const payload = {
         ...formData,
-        recruiterId: user?.id, 
-        recruiterName: user?.name
+        assignedJobId: typeof formData.assignedJobId === 'object' ? formData.assignedJobId._id : formData.assignedJobId,
+        recruiterId: user?.id,
+        recruiterName: user?.name,
+        skills: formData.skills.split(',').map((s: string) => s.trim()),
+        rating: parseInt(formData.rating) || 0
       };
 
       const url = isEdit ? `${API_URL}/candidates/${selectedCandidateId}` : `${API_URL}/candidates`;
@@ -253,41 +445,33 @@ export default function RecruiterCandidates() {
 
       if (res.ok) {
         toast({ title: "Success", description: `Candidate ${isEdit ? 'updated' : 'added'} successfully` });
-        setIsAddDialogOpen(false);
+        setIsAddDialogOpen(false); 
         setIsEditDialogOpen(false);
         fetchData();
         setFormData(initialFormState);
-      } else {
-        throw new Error("Operation failed");
-      }
+      } else { throw new Error(); }
     } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "Could not save candidate" });
-    } finally {
-      setIsSubmitting(false);
-    }
+      toast({ variant: "destructive", title: "Error", description: "Operation failed" });
+    } finally { setIsSubmitting(false); }
   };
 
-  const handleDeactivate = async (id: string) => {
-    if(!confirm("Are you sure you want to deactivate this candidate? They will be hidden from the active list.")) return;
+  const toggleActiveStatus = async (id: string, currentStatus: boolean) => {
+    if(!confirm(`Are you sure you want to ${currentStatus ? 'deactivate' : 'activate'}?`)) return;
     try {
-      await fetch(`${API_URL}/candidates/${id}`, {
-        method: 'PUT',
-        headers: { 
-            'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ active: false })
-      });
-      toast({ title: "Deactivated", description: "Candidate deactivated successfully" });
+      const headers = { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`, 'Content-Type': 'application/json' };
+      await fetch(`${API_URL}/candidates/${id}`, { method: 'PUT', headers, body: JSON.stringify({ active: !currentStatus }) });
+      toast({ title: "Status Updated" });
       fetchData();
-    } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "Deactivation failed" });
-    }
+    } catch (error) { toast({ variant: "destructive", title: "Error" }); }
   };
 
-  const copyId = (id: string) => {
-    navigator.clipboard.writeText(id);
-    toast({ title: "Copied", description: "ID copied to clipboard" });
+  const handleWhatsApp = (c: BackendCandidate) => {
+    if (!c.contact) return;
+    let phone = c.contact.replace(/\D/g, ''); 
+    if (phone.length === 10) phone = '91' + phone;
+    const firstName = c.name.split(' ')[0];
+    const message = `Hi ${firstName}, this is regarding your job application for the ${c.position} position at ${c.client}. Are you available?`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>;
@@ -296,389 +480,395 @@ export default function RecruiterCandidates() {
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
       <DashboardSidebar />
       <main className="flex-1 p-6 overflow-y-auto">
-         <div className="max-w-[1600px] mx-auto space-y-6">
-            
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold text-slate-900 dark:text-white">My Candidates</h1>
-                    <p className="text-slate-500">Manage and track your candidate pipeline</p>
-                </div>
-                <div className="flex gap-3">
-                    <Button variant="outline" className="hidden sm:flex"><Download className="mr-2 h-4 w-4"/> Export</Button>
-                    <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => { setFormData(initialFormState); setErrors({}); setIsAddDialogOpen(true); }}>
-                        <Plus className="mr-2 h-4 w-4"/> Add Candidate
-                    </Button>
-                </div>
+        <div className="max-w-[1800px] mx-auto space-y-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div><h1 className="text-3xl font-bold">My Candidates</h1><p className="text-slate-500">Manage pipeline</p></div>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={handleExport}><Download className="mr-2 h-4 w-4"/> Export</Button>
+              <Button className="bg-blue-600" onClick={() => { setFormData(initialFormState); setErrors({}); setIsAddDialogOpen(true); setIsCustomSource(false); }}>
+                <Plus className="mr-2 h-4 w-4"/> Add Candidate
+              </Button>
             </div>
+          </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-                <StatCard title="Total" value={stats.total} color="blue" active={activeStatFilter === null} onClick={() => setActiveStatFilter(null)} />
-                <StatCard title="Submitted" value={stats.submitted} color="slate" active={activeStatFilter === 'submitted'} onClick={() => setActiveStatFilter('submitted')} />
-                <StatCard title="Interview" value={stats.interview} color="orange" active={activeStatFilter === 'interview'} onClick={() => setActiveStatFilter('interview')} />
-                <StatCard title="Offer" value={stats.offer} color="purple" active={activeStatFilter === 'offer'} onClick={() => setActiveStatFilter('offer')} />
-                <StatCard title="Joined" value={stats.joined} color="green" onClick={() => {}} />
-                <StatCard title="Rejected" value={stats.rejected} color="red" onClick={() => {}} />
-            </div>
+          <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
+            <StatCard title="Total" value={stats.total} color="blue" active={activeStatFilter === null} onClick={() => setActiveStatFilter(null)} />
+            <StatCard title="Active" value={stats.active} color="green" active={activeStatFilter === 'active'} onClick={() => setActiveStatFilter('active')} />
+            <StatCard title="Submitted" value={stats.submitted} color="slate" active={activeStatFilter === 'submitted'} onClick={() => setActiveStatFilter('submitted')} />
+            <StatCard title="Interview" value={stats.interview} color="orange" active={activeStatFilter === 'interview'} onClick={() => setActiveStatFilter('interview')} />
+            <StatCard title="Offer" value={stats.offer} color="purple" active={activeStatFilter === 'offer'} onClick={() => setActiveStatFilter('offer')} />
+            <StatCard title="Joined" value={stats.joined} color="teal" />
+            <StatCard title="Rejected" value={stats.rejected} color="red" />
+          </div>
 
-            <Card className="p-4 border-slate-200 dark:border-slate-800 shadow-sm">
-                <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
-                    <div className="relative w-full md:max-w-md">
-                        <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400"/>
-                        <Input 
-                            placeholder="Search candidates..." 
-                            className="pl-10 bg-slate-50 dark:bg-slate-800 border-none"
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                        />
-                    </div>
-                    <div className="flex gap-3 items-center w-full md:w-auto">
-                        <Select value={statusFilter} onValueChange={setStatusFilter}>
-                            <SelectTrigger className="w-[160px]"><Filter className="mr-2 h-4 w-4"/> <SelectValue placeholder="Status"/></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Status</SelectItem>
-                                <SelectItem value="Submitted">Submitted</SelectItem>
-                                <SelectItem value="Interview">Interview</SelectItem>
-                                <SelectItem value="Offer">Offer</SelectItem>
-                                <SelectItem value="Joined">Joined</SelectItem>
-                                <SelectItem value="Rejected">Rejected</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        
-                        <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
-                            <Button 
-                                variant="ghost" size="sm" 
-                                className={viewMode === 'table' ? 'bg-white shadow-sm' : ''}
-                                onClick={() => setViewMode('table')}
-                            ><List className="h-4 w-4"/></Button>
-                            <Button 
-                                variant="ghost" size="sm" 
-                                className={viewMode === 'grid' ? 'bg-white shadow-sm' : ''}
-                                onClick={() => setViewMode('grid')}
-                            ><LayoutGrid className="h-4 w-4"/></Button>
-                        </div>
-                    </div>
+          <Card className="p-4 border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+              <div className="relative w-full md:max-w-md">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400"/>
+                <Input placeholder="Search name, ID or skills..." className="pl-10" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              </div>
+              <div className="flex gap-3">
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status"/></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="Submitted">Submitted</SelectItem>
+                    <SelectItem value="Interview">Interview</SelectItem>
+                    <SelectItem value="Offer">Offer</SelectItem>
+                    <SelectItem value="Joined">Joined</SelectItem>
+                    <SelectItem value="Rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex bg-slate-100 rounded-lg p-1">
+                  <Button variant="ghost" size="sm" className={viewMode === 'table' ? 'bg-white shadow' : ''} onClick={() => setViewMode('table')}><List className="h-4 w-4"/></Button>
+                  <Button variant="ghost" size="sm" className={viewMode === 'grid' ? 'bg-white shadow' : ''} onClick={() => setViewMode('grid')}><LayoutGrid className="h-4 w-4"/></Button>
                 </div>
-            </Card>
+              </div>
+            </div>
+          </Card>
 
-            {viewMode === 'table' ? (
-                <Card className="overflow-hidden border-slate-200 dark:border-slate-800 shadow-sm">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-800">
-                                <tr>
-                                    <th className="p-4 w-[50px]">S.No</th>
-                                    <th className="p-4">Candidate Details</th>
-                                    <th className="p-4">Job / Client</th>
-                                    <th className="p-4">Experience & NP</th>
-                                    <th className="p-4">Compensation</th>
-                                    <th className="p-4">Status</th>
-                                    <th className="p-4 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {getFilteredCandidates.map((c, index) => (
-                                    <tr key={c._id || c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                        <td className="p-4 text-slate-500">{index + 1}</td>
-                                        <td className="p-4">
-                                            <div className="flex items-center gap-3">
-                                                <Avatar className="h-9 w-9 border-2 border-white shadow-sm">
-                                                    <AvatarFallback className="bg-blue-100 text-blue-700">{getInitials(c.name)}</AvatarFallback>
-                                                </Avatar>
-                                                <div>
-                                                    <div className="font-semibold text-slate-900 dark:text-white">{c.name}</div>
-                                                    <div className="text-xs text-slate-500 mb-1">{c.email}</div>
-                                                    <div className="flex items-center gap-2">
-                                                        <code 
-                                                            className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px] cursor-pointer hover:bg-slate-200 text-slate-500" 
-                                                            onClick={() => copyId(c.candidateId || c._id)}
-                                                            title="Click to copy ID"
-                                                        >
-                                                            {c.candidateId || c._id.substring(0,6)}
-                                                        </code>
-                                                        <span className="flex items-center text-xs text-slate-500">
-                                                            <Phone className="h-3 w-3 mr-1" /> {c.contact}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="p-4 align-top">
-                                            <div className="font-medium text-slate-800 dark:text-slate-200">{c.position}</div>
-                                            <div className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-                                                <Building className="h-3 w-3"/> {c.client}
-                                            </div>
-                                            <div className="text-[11px] text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded mt-2 inline-block">
-                                                <span className="font-semibold">For: </span>
-                                                {getAssignedJobTitle(c.assignedJobId)}
-                                            </div>
-                                        </td>
-                                        <td className="p-4 align-top">
-                                            <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1.5">
-                                                <div className="flex justify-between w-full max-w-[120px]">
-                                                    <span>Total Exp:</span>
-                                                    <span className="font-medium">{c.totalExperience || 0}y</span>
-                                                </div>
-                                                <div className="flex justify-between w-full max-w-[120px]">
-                                                    <span>Rel Exp:</span>
-                                                    <span className="font-medium">{c.relevantExperience || 0}y</span>
-                                                </div>
-                                                <div className="flex justify-between w-full max-w-[120px] text-orange-600 dark:text-orange-400">
-                                                    <span>Notice:</span>
-                                                    <span className="font-medium">{c.noticePeriod || 'N/A'}</span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="p-4 align-top">
-                                            <div className="space-y-1.5">
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px] text-slate-400 uppercase tracking-wide">Current</span>
-                                                    <span className="font-medium text-sm">{c.ctc || 'N/A'} LPA</span>
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px] text-slate-400 uppercase tracking-wide">Expected</span>
-                                                    <span className="font-medium text-sm text-green-600">{c.ectc || 'N/A'} LPA</span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="p-4">
-                                            <Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge>
-                                        </td>
-                                        <td className="p-4 text-right">
-                                            <div className="flex justify-end gap-2">
-                                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 hover:bg-blue-50" onClick={() => openEditDialog(c)}>
-                                                    <Edit className="h-4 w-4 text-blue-600"/>
-                                                </Button>
-                                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 hover:bg-red-50" onClick={() => handleDeactivate(c._id)} title="Deactivate">
-                                                    <Ban className="h-4 w-4 text-red-600"/>
-                                                </Button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        {getFilteredCandidates.length === 0 && <div className="p-12 text-center text-slate-500">No candidates found matching your filters.</div>}
-                    </div>
-                </Card>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {getFilteredCandidates.map(c => (
-                        <Card key={c._id || c.id} className="hover:shadow-lg transition-all border-slate-200 dark:border-slate-800 group">
-                            <CardContent className="p-6">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="flex gap-3">
-                                        <Avatar className="h-10 w-10"><AvatarFallback className="bg-blue-50 text-blue-600 font-semibold">{getInitials(c.name)}</AvatarFallback></Avatar>
-                                        <div>
-                                            <h3 className="font-bold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors">{c.name}</h3>
-                                            <p className="text-sm text-slate-500">{c.position}</p>
-                                        </div>
-                                    </div>
-                                    <Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge>
-                                </div>
-                                <div className="space-y-2.5 text-sm text-slate-600 dark:text-slate-400 mb-5">
-                                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-2 rounded"><Building className="h-4 w-4 text-slate-400"/> {c.client}</div>
-                                    <div className="flex items-center gap-2"><Mail className="h-4 w-4 text-slate-400"/> <span className="truncate">{c.email}</span></div>
-                                    <div className="flex items-center gap-2"><Phone className="h-4 w-4 text-slate-400"/> {c.contact}</div>
-                                    <div className="flex items-center gap-2"><Briefcase className="h-4 w-4 text-slate-400"/> For: {getAssignedJobTitle(c.assignedJobId)}</div>
-                                </div>
-                                <div className="grid grid-cols-3 gap-2 text-xs font-medium text-slate-500 pt-4 border-t border-slate-100 dark:border-slate-800">
-                                    <div className="text-center p-1 bg-slate-50 rounded">Exp: {c.totalExperience}y</div>
-                                    <div className="text-center p-1 bg-slate-50 rounded">CTC: {c.ctc}</div>
-                                    <div className="text-center p-1 bg-slate-50 rounded">NP: {c.noticePeriod}</div>
-                                </div>
-                                <div className="mt-4 flex gap-2">
-                                    <Button variant="outline" className="w-full" size="sm" onClick={() => openEditDialog(c)}>Edit</Button>
-                                    <Button variant="outline" className="w-full text-red-600 hover:text-red-700" size="sm" onClick={() => handleDeactivate(c._id)}>Deactivate</Button>
-                                </div>
-                            </CardContent>
-                        </Card>
+          {viewMode === 'table' ? (
+            <Card className="overflow-hidden border-slate-200 dark:border-slate-800 shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left border-collapse">
+                  <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-semibold border-b">
+                    <tr>
+                      <th className="p-4 w-12"><input type="checkbox" onChange={selectAllCandidates} className="h-4 w-4 rounded border-slate-300"/></th>
+                      <th className="p-3">S.No</th>
+                      <th className="p-3">ID</th>
+                      <th className="p-3">Name</th>
+                      <th className="p-3">Phone</th>
+                      <th className="p-3">Email</th>
+                      <th className="p-3">Client</th>
+                      <th className="p-3">Skills</th> 
+                      <th className="p-3">Date Added</th>
+                      <th className="p-3">Experience</th>
+                      <th className="p-3">CTC / ECTC</th>
+                      <th className="p-3">Notice</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3">Remarks</th>
+                      <th className="p-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {getFilteredCandidates.map((c, index) => (
+                      <tr key={c._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <td className="p-3 pl-4"><input type="checkbox" checked={selectedCandidates.includes(c._id)} onChange={() => toggleSelectCandidate(c._id)} className="h-4 w-4 rounded"/></td>
+                        <td className="p-3 text-slate-500">{index + 1}</td>
+                        <td className="p-3 font-mono text-xs text-blue-600 font-bold cursor-pointer" onClick={() => { navigator.clipboard.writeText(getCandidateId(c)); toast({title: "Copied ID"}); }}>{getCandidateId(c)}</td>
+                        <td className="p-3"><div className="flex items-center gap-2"><Avatar className="h-8 w-8"><AvatarFallback>{getInitials(c.name)}</AvatarFallback></Avatar><span className="font-semibold">{c.name}</span></div></td>
+                        <td className="p-3 text-sm text-slate-600"><div className="flex items-center gap-2">{c.contact} <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-green-600" onClick={() => handleWhatsApp(c)}><MessageCircle className="h-3.5 w-3.5"/></Button></div></td>
+                        <td className="p-3 text-sm text-slate-600"><span className="truncate max-w-[150px] block" title={c.email}>{c.email}</span></td>
+                        <td className="p-3 text-slate-600">{c.client}</td>
+                        <td className="p-3 text-xs text-slate-600 max-w-[150px] truncate" title={Array.isArray(c.skills) ? c.skills.join(', ') : c.skills}>{formatSkills(c.skills)}</td>
+                        <td className="p-3 text-sm text-slate-600">{formatDate(c.dateAdded)}</td>
+                        <td className="p-3 text-sm">{c.totalExperience} Yrs</td>
+                        <td className="p-3 text-xs"><div>{c.ctc || '-'}</div><div className="text-green-600">{c.ectc || '-'}</div></td>
+                        <td className="p-3 text-sm"><Badge variant="outline">{c.noticePeriod || '-'}</Badge></td>
+                        <td className="p-3"><Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge></td>
+                        <td className="p-3 text-xs text-slate-500 truncate max-w-[100px]">{c.remarks}</td>
+                        <td className="p-3 text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => openViewDialog(c)}><Eye className="h-3.5 w-3.5"/></Button>
+                            <Button size="sm" variant="ghost" onClick={() => openEditDialog(c)}><Edit className="h-3.5 w-3.5 text-blue-600"/></Button>
+                            <Button size="sm" variant="ghost" onClick={() => toggleActiveStatus(c._id, c.active !== false)}><Ban className="h-3.5 w-3.5 text-red-600"/></Button>
+                          </div>
+                        </td>
+                      </tr>
                     ))}
-                </div>
-            )}
-         </div>
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {getFilteredCandidates.map(c => (
+                    <Card key={c._id} className="hover:shadow-lg transition-all group">
+                        <CardContent className="p-6">
+                            <div className="flex justify-between mb-4">
+                                <div className="flex gap-3">
+                                    <Avatar><AvatarFallback>{getInitials(c.name)}</AvatarFallback></Avatar>
+                                    <div>
+                                        <h3 className="font-bold">{c.name}</h3>
+                                        <p className="text-sm text-blue-600 font-mono">{getCandidateId(c)}</p>
+                                    </div>
+                                </div>
+                                <Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge>
+                            </div>
+                            <div className="space-y-2 text-sm text-slate-600">
+                                <div className="flex items-center gap-2"><Building className="h-4 w-4"/> {c.client}</div>
+                                <div className="flex items-center gap-2"><Award className="h-4 w-4"/> {formatSkills(c.skills)}</div>
+                                <div className="flex items-center gap-2"><Mail className="h-4 w-4"/> {c.email}</div>
+                                <div className="flex items-center gap-2"><Phone className="h-4 w-4"/> {c.contact}</div>
+                            </div>
+                            <div className="mt-4 flex gap-2">
+                                <Button variant="outline" className="flex-1" onClick={() => setViewingCandidate(c)}>View</Button>
+                                <Button variant="outline" className="flex-1" onClick={() => openEditDialog(c)}>Edit</Button>
+                                <Button variant="outline" className="text-green-600 hover:bg-green-50" onClick={() => handleWhatsApp(c)}><MessageCircle className="h-4 w-4"/></Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                ))}
+            </div>
+          )}
+        </div>
       </main>
 
-      {/* Add/Edit Dialog */}
-      <Dialog open={isAddDialogOpen || isEditDialogOpen} onOpenChange={(open) => {
-          if(!open) { setIsAddDialogOpen(false); setIsEditDialogOpen(false); }
-      }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      {/* Add/Edit Candidate Dialog */}
+      <Dialog open={isAddDialogOpen || isEditDialogOpen} onOpenChange={(open) => { if(!open) { setIsAddDialogOpen(false); setIsEditDialogOpen(false); } }}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
                 <DialogTitle>{isEditDialogOpen ? 'Edit Candidate' : 'Add New Candidate'}</DialogTitle>
-                <DialogDescription>Fill in the details below. Required fields marked with *</DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-                <div className="space-y-2">
-                    <Label className={errors.name ? "text-red-500" : ""}>Name *</Label>
-                    <Input 
-                        value={formData.name} 
-                        onChange={e => handleInputChange('name', e.target.value)} 
-                        className={errors.name ? "border-red-500" : ""}
-                    />
-                    {errors.name && <span className="text-xs text-red-500">{errors.name}</span>}
-                </div>
 
-                <div className="space-y-2">
-                    <Label className={errors.email ? "text-red-500" : ""}>Email *</Label>
-                    <Input 
-                        value={formData.email} 
-                        onChange={e => handleInputChange('email', e.target.value)} 
-                        className={errors.email ? "border-red-500" : ""}
-                    />
-                    {errors.email && <span className="text-xs text-red-500">{errors.email}</span>}
+            {!isEditDialogOpen && (
+              <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-6 bg-slate-50 dark:bg-slate-900/50 mb-4">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-full"><FileUp className="h-6 w-6 text-blue-600" /></div>
+                  <div className="text-center">
+                    <h3 className="font-semibold text-slate-900 dark:text-white mb-1">Upload Resume to Auto-Fill</h3>
+                    <p className="text-sm text-slate-500 mb-3">Upload PDF or DOC/DOCX file (max 5MB)</p>
+                  </div>
+                  <label htmlFor="resume-upload-recruiter">
+                    <input id="resume-upload-recruiter" type="file" accept=".pdf,.doc,.docx" onChange={handleResumeUpload} className="hidden" disabled={isParsingResume} />
+                    <Button type="button" variant="outline" disabled={isParsingResume} onClick={() => document.getElementById('resume-upload-recruiter')?.click()}>
+                      {isParsingResume ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Parsing...</> : <><Upload className="mr-2 h-4 w-4" />Choose File</>}
+                    </Button>
+                  </label>
                 </div>
+              </div>
+            )}
 
-                <div className="space-y-2">
-                    <Label className={errors.contact ? "text-red-500" : ""}>Phone *</Label>
-                    <Input 
-                        value={formData.contact} 
-                        onChange={e => handleInputChange('contact', e.target.value)} 
-                        className={errors.contact ? "border-red-500" : ""}
-                    />
-                    {errors.contact && <span className="text-xs text-red-500">{errors.contact}</span>}
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 py-4">
+              
+              <div className="md:col-span-3 font-semibold border-b pb-1 text-slate-500 flex items-center gap-2"><UserCircle className="h-4 w-4"/> Personal Information</div>
+              
+              <div className="space-y-2">
+                <Label className={errors.name ? "text-red-500" : ""}>Full Name *</Label>
+                <Input value={formData.name} onChange={e => handleInputChange('name', e.target.value)} className={errors.name ? "border-red-500" : ""} placeholder="Starts with Uppercase"/>
+                {errors.name && <span className="text-xs text-red-500">{errors.name}</span>}
+              </div>
+              <div className="space-y-2">
+                <Label className={errors.email ? "text-red-500" : ""}>Email *</Label>
+                <Input value={formData.email} onChange={e => handleInputChange('email', e.target.value)} className={errors.email ? "border-red-500" : ""} placeholder="user@domain.com"/>
+                {errors.email && <span className="text-xs text-red-500">{errors.email}</span>}
+              </div>
+              <div className="space-y-2">
+                <Label className={errors.contact ? "text-red-500" : ""}>Phone *</Label>
+                <Input value={formData.contact} onChange={e => handleInputChange('contact', e.target.value)} className={errors.contact ? "border-red-500" : ""} placeholder="10 Digits Only"/>
+                {errors.contact && <span className="text-xs text-red-500">{errors.contact}</span>}
+              </div>
+              
+              <div className="space-y-2"><Label>Date of Birth</Label><Input type="date" value={formData.dateOfBirth} onChange={e => handleInputChange('dateOfBirth', e.target.value)}/></div>
+              <div className="space-y-2">
+                <Label>Gender</Label>
+                <Select value={formData.gender} onValueChange={val => handleInputChange('gender', val)}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent><SelectItem value="Male">Male</SelectItem><SelectItem value="Female">Female</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>LinkedIn</Label>
+                <div className="relative"><Linkedin className="absolute left-2 top-2.5 h-4 w-4 text-slate-400"/><Input className="pl-8" value={formData.linkedin} onChange={e => handleInputChange('linkedin', e.target.value)} placeholder="Profile URL"/></div>
+              </div>
+              <div className="space-y-2"><Label>Current Location</Label><Input value={formData.currentLocation} onChange={e => handleInputChange('currentLocation', e.target.value)}/></div>
+              <div className="space-y-2"><Label>Preferred Location</Label><Input value={formData.preferredLocation} onChange={e => handleInputChange('preferredLocation', e.target.value)}/></div>
 
-                <div className="space-y-2">
-                    <Label className={errors.position ? "text-red-500" : ""}>Position *</Label>
-                    <Input 
-                        value={formData.position} 
-                        onChange={e => handleInputChange('position', e.target.value)} 
-                        className={errors.position ? "border-red-500" : ""}
-                    />
-                    {errors.position && <span className="text-xs text-red-500">{errors.position}</span>}
-                </div>
+              <div className="md:col-span-3 font-semibold border-b pb-1 text-slate-500 mt-4 flex items-center gap-2"><Briefcase className="h-4 w-4"/> Professional Information</div>
+              
+              <div className="space-y-2">
+                <Label className={errors.position ? "text-red-500" : ""}>Position *</Label>
+                <Select value={formData.position} onValueChange={(val) => handleInputChange('position', val)}>
+                    <SelectTrigger className={errors.position ? "border-red-500" : ""}><SelectValue placeholder="Select Position" /></SelectTrigger>
+                    <SelectContent>{uniquePositions.map((pos) => (<SelectItem key={pos} value={pos}>{pos}</SelectItem>))}</SelectContent>
+                </Select>
+                {errors.position && <span className="text-xs text-red-500">{errors.position}</span>}
+              </div>
 
-                <div className="space-y-2">
-                    <Label className={errors.client ? "text-red-500" : ""}>Client *</Label>
-                    <Input 
-                        value={formData.client} 
-                        onChange={e => handleInputChange('client', e.target.value)} 
-                        className={errors.client ? "border-red-500" : ""}
-                    />
-                    {errors.client && <span className="text-xs text-red-500">{errors.client}</span>}
-                </div>
-                
-                <div className="space-y-2">
-                    <Label>Status</Label>
-                    <Select value={formData.status} onValueChange={val => handleInputChange('status', val)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="Submitted">Submitted</SelectItem>
-                            <SelectItem value="L1 Interview">L1 Interview</SelectItem>
-                            <SelectItem value="L2 Interview">L2 Interview</SelectItem>
-                            <SelectItem value="Final Interview">Final Interview</SelectItem>
-                            <SelectItem value="HR Interview">HR Interview</SelectItem>
-                            <SelectItem value="Offer">Offer</SelectItem>
-                            <SelectItem value="Joined">Joined</SelectItem>
-                            <SelectItem value="Rejected">Rejected</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
+              <div className="space-y-2">
+                <Label className={errors.client ? "text-red-500" : ""}>Client *</Label>
+                <Select value={formData.client} onValueChange={(val) => handleInputChange('client', val)}>
+                    <SelectTrigger className={errors.client ? "border-red-500" : ""}><SelectValue placeholder="Select Client" /></SelectTrigger>
+                    <SelectContent>{clients.map((client) => (<SelectItem key={client._id} value={client.companyName}>{client.companyName}</SelectItem>))}</SelectContent>
+                </Select>
+                {errors.client && <span className="text-xs text-red-500">{errors.client}</span>}
+              </div>
 
-                <div className="space-y-2">
-                    <Label>Assigned Job</Label>
-                    <Select value={formData.assignedJobId} onValueChange={val => handleInputChange('assignedJobId', val)}>
-                        <SelectTrigger><SelectValue placeholder="Select Job" /></SelectTrigger>
-                        <SelectContent>
-                            {jobs.map(j => <SelectItem key={j._id || j.id} value={j._id || j.id}>{j.position} - {j.clientName}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
+              <div className="space-y-2"><Label>Current Company</Label><Input value={formData.currentCompany} onChange={e => handleInputChange('currentCompany', e.target.value)}/></div>
+              <div className="space-y-2"><Label>Industry</Label><Input value={formData.industry} onChange={e => handleInputChange('industry', e.target.value)}/></div>
+              <div className="md:col-span-2 space-y-2">
+                <Label className={errors.skills ? "text-red-500" : ""}>Skills (comma separated) *</Label>
+                <Input value={formData.skills} onChange={e => handleInputChange('skills', e.target.value)} className={errors.skills ? "border-red-500" : ""}/>
+                {errors.skills && <span className="text-xs text-red-500">{errors.skills}</span>}
+              </div>
 
-                {/* Stats Row */}
-                <div className="space-y-2">
-                    <Label className={errors.totalExperience ? "text-red-500" : ""}>Total Exp (Years)</Label>
-                    <Input 
-                        value={formData.totalExperience} 
-                        onChange={e => handleInputChange('totalExperience', e.target.value)} 
-                        className={errors.totalExperience ? "border-red-500" : ""}
-                    />
-                    {errors.totalExperience && <span className="text-xs text-red-500">{errors.totalExperience}</span>}
-                </div>
+              <div className="md:col-span-3 font-semibold text-slate-500 border-b pb-1 mt-4 flex items-center gap-2"><GraduationCap className="h-4 w-4"/> Education</div>
+              <div className="md:col-span-3 space-y-1"><Label>Qualification</Label><Input value={formData.education} onChange={e => handleInputChange('education', e.target.value)} placeholder="e.g. B.Tech from IIT Delhi"/></div>
 
-                <div className="space-y-2">
-                    <Label className={errors.relevantExperience ? "text-red-500" : ""}>Relevant Exp</Label>
-                    <Input 
-                        value={formData.relevantExperience} 
-                        onChange={e => handleInputChange('relevantExperience', e.target.value)} 
-                        className={errors.relevantExperience ? "border-red-500" : ""}
-                    />
-                    {errors.relevantExperience && <span className="text-xs text-red-500">{errors.relevantExperience}</span>}
-                </div>
+              <div className="md:col-span-3 font-semibold text-slate-500 border-b pb-1 mt-4 flex items-center gap-2"><IndianRupee className="h-4 w-4"/> Experience & Pay</div>
+              <div className="space-y-2"><Label>Total Exp (Yrs)</Label><Input value={formData.totalExperience} onChange={e => handleInputChange('totalExperience', e.target.value)} placeholder="Numbers only"/></div>
+              <div className="space-y-2"><Label>Relevant Exp (Yrs)</Label><Input value={formData.relevantExperience} onChange={e => handleInputChange('relevantExperience', e.target.value)} placeholder="Numbers only"/></div>
+              
+              <div className="space-y-2">
+                 <Label>Serving Notice?</Label>
+                 <Select value={formData.servingNoticePeriod} onValueChange={(val) => handleInputChange('servingNoticePeriod', val)}>
+                     <SelectTrigger><SelectValue/></SelectTrigger>
+                     <SelectContent><SelectItem value="false">No</SelectItem><SelectItem value="true">Yes</SelectItem></SelectContent>
+                 </Select>
+              </div>
 
-                <div className="space-y-2">
-                    <Label className={errors.ctc ? "text-red-500" : ""}>Current CTC (LPA)</Label>
-                    <Input 
-                        value={formData.ctc} 
-                        onChange={e => handleInputChange('ctc', e.target.value)} 
-                        className={errors.ctc ? "border-red-500" : ""}
-                    />
-                    {errors.ctc && <span className="text-xs text-red-500">{errors.ctc}</span>}
+              {formData.servingNoticePeriod === 'true' && (
+                <div className="space-y-2 animate-in fade-in zoom-in-95">
+                    <Label className={errors.noticePeriodDays ? "text-red-500" : ""}>Days Remaining *</Label>
+                    <Input value={formData.noticePeriodDays} onChange={e => handleInputChange('noticePeriodDays', e.target.value)} placeholder="e.g. 30" />
+                    {errors.noticePeriodDays && <span className="text-xs text-red-500">{errors.noticePeriodDays}</span>}
                 </div>
+              )}
 
-                <div className="space-y-2">
-                    <Label className={errors.ectc ? "text-red-500" : ""}>Expected CTC (LPA)</Label>
-                    <Input 
-                        value={formData.ectc} 
-                        onChange={e => handleInputChange('ectc', e.target.value)} 
-                        className={errors.ectc ? "border-red-500" : ""}
-                    />
-                    {errors.ectc && <span className="text-xs text-red-500">{errors.ectc}</span>}
-                </div>
+              <div className="space-y-2"><Label>Current CTC</Label><Input value={formData.ctc} onChange={e => handleInputChange('ctc', e.target.value)} placeholder="Numbers only"/></div>
+              <div className="space-y-2"><Label>Expected CTC</Label><Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)} placeholder="Numbers only"/></div>
+              
+              <div className="space-y-2">
+                  <Label>Offers in Hand?</Label>
+                  <Select value={formData.offersInHand} onValueChange={(val) => handleInputChange('offersInHand', val)}>
+                     <SelectTrigger><SelectValue/></SelectTrigger>
+                     <SelectContent><SelectItem value="false">No</SelectItem><SelectItem value="true">Yes</SelectItem></SelectContent>
+                  </Select>
+               </div>
 
-                <div className="space-y-2">
-                    <Label>Notice Period</Label>
-                    <Input value={formData.noticePeriod} onChange={e => handleInputChange('noticePeriod', e.target.value)} />
-                </div>
-                
-                <div className="col-span-1 md:col-span-2 space-y-2">
-                    <Label className={errors.skills ? "text-red-500" : ""}>Skills * (comma separated)</Label>
-                    <Input 
-                        value={formData.skills} 
-                        onChange={e => handleInputChange('skills', e.target.value)} 
-                        placeholder="Java, React, AWS..." 
-                        className={errors.skills ? "border-red-500" : ""}
-                    />
-                    {errors.skills && <span className="text-xs text-red-500">{errors.skills}</span>}
-                </div>
-                
-                <div className="col-span-1 md:col-span-2 space-y-2">
-                    <Label>Notes</Label>
-                    <Textarea value={formData.notes} onChange={e => handleInputChange('notes', e.target.value)} placeholder="Internal notes..." />
-                </div>
+               {formData.offersInHand === 'true' && (
+                 <div className="space-y-2 animate-in fade-in zoom-in-95">
+                    <Label className={errors.offerPackage ? "text-red-500" : ""}>Package Amount *</Label>
+                    <Input value={formData.offerPackage} onChange={e => handleInputChange('offerPackage', e.target.value)} placeholder="e.g. 15 LPA" />
+                    {errors.offerPackage && <span className="text-xs text-red-500">{errors.offerPackage}</span>}
+                 </div>
+               )}
+
+              <div className="md:col-span-3 font-semibold text-slate-500 border-b pb-1 mt-4 flex items-center gap-2"><Target className="h-4 w-4"/> Recruitment Details</div>
+              <div className="space-y-2">
+                 <Label>Source</Label>
+                 <Select value={isCustomSource ? 'Other' : formData.source} onValueChange={v => { if(v==='Other'){setIsCustomSource(true);handleInputChange('source','')}else{setIsCustomSource(false);handleInputChange('source',v)} }}>
+                    <SelectTrigger><SelectValue placeholder="Source"/></SelectTrigger>
+                    <SelectContent>{standardSources.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}<SelectItem value="Other">Other</SelectItem></SelectContent>
+                 </Select>
+                 {isCustomSource && <Input className="mt-1" value={formData.source} onChange={e => handleInputChange('source', e.target.value)} placeholder="Enter Source"/>}
+              </div>
+              <div className="space-y-2">
+                <Label>Assigned Job</Label>
+                <Select value={typeof formData.assignedJobId === 'object' ? (formData.assignedJobId as any)._id : formData.assignedJobId || ''} onValueChange={val => handleInputChange('assignedJobId', val)}>
+                  <SelectTrigger><SelectValue placeholder="Select Job" /></SelectTrigger>
+                  <SelectContent>{jobs.map(j => <SelectItem key={j._id} value={j._id}>{j.position} - {j.clientName}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2"><Label>Status</Label><Select value={formData.status} onValueChange={v => handleInputChange('status', v)}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="Submitted">Submitted</SelectItem><SelectItem value="Interview">Interview</SelectItem><SelectItem value="Offer">Offer</SelectItem><SelectItem value="Joined">Joined</SelectItem><SelectItem value="Rejected">Rejected</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Rating</Label><Select value={formData.rating} onValueChange={v => handleInputChange('rating', v)}><SelectTrigger><SelectValue placeholder="Rate"/></SelectTrigger><SelectContent>{[1,2,3,4,5].map(r=><SelectItem key={r} value={r.toString()}>{r} Stars</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Date Added</Label><Input type="date" value={formData.dateAdded} onChange={e => handleInputChange('dateAdded', e.target.value)}/></div>
+
+              <div className="md:col-span-3 space-y-2 mt-2"><Label>Remarks</Label><Textarea value={formData.remarks} onChange={e => handleInputChange('remarks', e.target.value)}/></div>
+              <div className="md:col-span-3 space-y-2"><Label>Internal Notes</Label><Textarea value={formData.notes} onChange={e => handleInputChange('notes', e.target.value)}/></div>
             </div>
             <DialogFooter>
                 <Button variant="outline" onClick={() => { setIsAddDialogOpen(false); setIsEditDialogOpen(false); }}>Cancel</Button>
-                <Button onClick={() => handleSave(isEditDialogOpen)} disabled={isSubmitting}>
-                    {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-                    {isEditDialogOpen ? "Update Candidate" : "Save Candidate"}
-                </Button>
+                <Button onClick={() => handleSave(isEditDialogOpen)} disabled={isSubmitting}>{isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} {isEditDialogOpen ? "Update" : "Save"}</Button>
             </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* View Dialog */}
+      {viewingCandidate && (
+        <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-2xl flex items-center gap-3">
+                <Avatar className="h-10 w-10"><AvatarFallback className="bg-blue-600 text-white">{getInitials(viewingCandidate.name)}</AvatarFallback></Avatar>
+                {viewingCandidate.name} 
+                <Badge variant={getStatusBadgeVariant(viewingCandidate.status)} className="ml-auto">{viewingCandidate.status}</Badge>
+              </DialogTitle>
+              <DialogDescription className="font-mono text-blue-600 text-sm">ID: {getCandidateId(viewingCandidate)}</DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                <div className="bg-slate-50 p-4 rounded-lg space-y-3">
+                   <h3 className="font-semibold text-slate-800 border-b pb-2 flex items-center gap-2"><UserCircle className="h-4 w-4"/> Personal Information</h3>
+                   <div className="grid grid-cols-2 gap-y-3 text-sm">
+                      <div><Label className="text-xs text-slate-500">Email</Label><div>{viewingCandidate.email}</div></div>
+                      <div>
+                          <Label className="text-xs text-slate-500">Phone</Label>
+                          <div className="flex items-center gap-2">
+                             <div>{viewingCandidate.contact}</div>
+                             <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-green-600" onClick={() => handleWhatsApp(viewingCandidate)}><MessageCircle className="h-3.5 w-3.5" /></Button>
+                          </div>
+                      </div>
+                      <div><Label className="text-xs text-slate-500">Date of Birth</Label><div>{formatDate(viewingCandidate.dateOfBirth)}</div></div>
+                      <div><Label className="text-xs text-slate-500">Gender</Label><div>{viewingCandidate.gender || '-'}</div></div>
+                      <div className="col-span-2"><Label className="text-xs text-slate-500">LinkedIn</Label><div>{viewingCandidate.linkedin ? <a href={viewingCandidate.linkedin} target="_blank" className="text-blue-600 hover:underline flex items-center gap-1"><Linkedin className="h-3 w-3"/> {viewingCandidate.linkedin}</a> : '-'}</div></div>
+                      <div><Label className="text-xs text-slate-500">Current Location</Label><div>{viewingCandidate.currentLocation || '-'}</div></div>
+                      <div><Label className="text-xs text-slate-500">Preferred Location</Label><div>{viewingCandidate.preferredLocation || '-'}</div></div>
+                   </div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-lg space-y-3">
+                   <h3 className="font-semibold text-slate-800 border-b pb-2 flex items-center gap-2"><Briefcase className="h-4 w-4"/> Professional Details</h3>
+                   <div className="grid grid-cols-2 gap-y-3 text-sm">
+                      <div><Label className="text-xs text-slate-500">Position</Label><div>{viewingCandidate.position}</div></div>
+                      <div><Label className="text-xs text-slate-500">Client</Label><div>{viewingCandidate.client}</div></div>
+                      <div><Label className="text-xs text-slate-500">Industry</Label><div>{viewingCandidate.industry || '-'}</div></div>
+                      <div><Label className="text-xs text-slate-500">Current Company</Label><div>{viewingCandidate.currentCompany || '-'}</div></div>
+                      <div className="col-span-2"><Label className="text-xs text-slate-500">Skills</Label><div className="flex flex-wrap gap-1 mt-1">{Array.isArray(viewingCandidate.skills) ? viewingCandidate.skills.map(s => <Badge key={s} variant="outline" className="bg-white">{s}</Badge>) : viewingCandidate.skills}</div></div>
+                   </div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-lg space-y-3">
+                   <h3 className="font-semibold text-slate-800 border-b pb-2 flex items-center gap-2"><IndianRupee className="h-4 w-4"/> Experience & Compensation</h3>
+                   <div className="grid grid-cols-2 gap-y-3 text-sm">
+                      <div><Label className="text-xs text-slate-500">Total Exp</Label><div>{viewingCandidate.totalExperience} Years</div></div>
+                      <div><Label className="text-xs text-slate-500">Relevant Exp</Label><div>{viewingCandidate.relevantExperience} Years</div></div>
+                      <div><Label className="text-xs text-slate-500">Current CTC</Label><div>{viewingCandidate.ctc}</div></div>
+                      <div><Label className="text-xs text-slate-500">Expected CTC</Label><div>{viewingCandidate.ectc}</div></div>
+                      
+                      {viewingCandidate.servingNoticePeriod && (
+                        <div><Label className="text-xs text-slate-500">Notice Period</Label><div className="text-amber-600 font-medium">Serving ({viewingCandidate.noticePeriodDays} days left)</div></div>
+                      )}
+                      
+                      {viewingCandidate.offersInHand && (
+                        <div><Label className="text-xs text-slate-500">Offers</Label><div className="text-green-600 font-medium">Yes ({viewingCandidate.offerPackage})</div></div>
+                      )}
+                   </div>
+                </div>
+                <div className="col-span-1 md:col-span-2 bg-slate-50 p-4 rounded-lg space-y-3">
+                   <h3 className="font-semibold text-slate-800 border-b pb-2 flex items-center gap-2"><Target className="h-4 w-4"/> Recruitment Metadata</h3>
+                   <div className="grid grid-cols-2 md:grid-cols-4 gap-y-3 text-sm">
+                      <div><Label className="text-xs text-slate-500">Source</Label><div>{viewingCandidate.source}</div></div>
+                      <div><Label className="text-xs text-slate-500">Assigned Job</Label><div>{getAssignedJobTitle(viewingCandidate.assignedJobId)}</div></div>
+                      <div><Label className="text-xs text-slate-500">Recruiter</Label><div>{viewingCandidate.recruiterName || 'Self'}</div></div>
+                      <div><Label className="text-xs text-slate-500">Date Added</Label><div>{formatDate(viewingCandidate.dateAdded)}</div></div>
+                      <div><Label className="text-xs text-slate-500">Rating</Label><div className="flex items-center gap-1">{viewingCandidate.rating} <Star className="h-3 w-3 fill-yellow-400 text-yellow-400"/></div></div>
+                      {viewingCandidate.status === 'Rejected' && <div className="col-span-2 text-red-600"><Label className="text-xs text-red-400">Rejection Reason</Label><div>{viewingCandidate.rejectionReason}</div></div>}
+                   </div>
+                </div>
+                <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100">
+                        <Label className="text-xs font-semibold text-yellow-700 flex items-center gap-2 mb-2"><FileText className="h-3 w-3"/> Internal Notes</Label>
+                        <p className="text-sm text-yellow-900 whitespace-pre-wrap">{viewingCandidate.notes || 'No internal notes.'}</p>
+                    </div>
+                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                        <Label className="text-xs font-semibold text-blue-700 flex items-center gap-2 mb-2"><MessageSquare className="h-3 w-3"/> Remarks</Label>
+                        <p className="text-sm text-blue-900 whitespace-pre-wrap">{viewingCandidate.remarks || 'No remarks.'}</p>
+                    </div>
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>Close</Button>
+                <Button onClick={() => { setIsViewDialogOpen(false); openEditDialog(viewingCandidate); }}>Edit Candidate</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
 
-// Helper Component for Stat Cards
-const StatCard = ({ title, value, color, active, onClick }: any) => {
-    const colors: any = {
-        blue: 'border-l-blue-500',
-        slate: 'border-l-slate-500',
-        orange: 'border-l-orange-500',
-        purple: 'border-l-purple-500',
-        red: 'border-l-red-500',
-        yellow: 'border-l-yellow-500',
-        green: 'border-l-green-500'
-    };
-
-    return (
-        <div 
-            onClick={onClick}
-            className={`bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 border-l-4 ${colors[color]} cursor-pointer transition-all ${active ? 'ring-2 ring-offset-2 ring-blue-500' : 'hover:shadow-md'}`}
-        >
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{value}</h3>
-            <p className="text-sm text-slate-500">{title}</p>
+const StatCard = ({ title, value, color, active, onClick }: any) => (
+    <div onClick={onClick} className={`p-4 rounded-lg shadow-sm border border-l-4 border-l-${color}-500 bg-white ${active ? 'ring-2 ring-blue-500' : ''} cursor-pointer`}>
+        <div className="flex justify-between items-center">
+            <div><h3 className="text-2xl font-bold">{value}</h3><p className="text-sm text-slate-500">{title}</p></div>
         </div>
-    );
-};
+    </div>
+);

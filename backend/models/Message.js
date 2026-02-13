@@ -6,6 +6,9 @@ const messageSchema = mongoose.Schema({
   subject: { type: String, required: true },
   content: { type: String, required: true },
   read: { type: Boolean, default: false },
+  // Optional: Add sender/receiver names to avoid extra lookups if you prefer
+  fromName: { type: String },
+  toName: { type: String }
 }, {
   timestamps: true // automatically adds createdAt
 });

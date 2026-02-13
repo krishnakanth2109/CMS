@@ -1,22 +1,218 @@
 import express from 'express';
-import { 
-  getCandidates, 
-  createCandidate, 
-  updateCandidate, 
-  deleteCandidate 
-} from '../controllers/candidateController.js';
-import { protect } from '../middleware/authMiddleware.js';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import Candidate from '../models/Candidate.js';
+import User from '../models/User.js'; 
+import { parseResume } from './resumeParser.js'; 
+import { protect } from '../middleware/authMiddleware.js'; 
 
 const router = express.Router();
 
+// --- 1. Multer Setup (Disk Storage) ---
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = 'uploads/';
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, '-')}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, 
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword'
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF and Docx allowed.'));
+    }
+  }
+});
+
+// Apply Authentication
 router.use(protect);
 
-router.route('/')
-  .get(getCandidates)
-  .post(createCandidate);
+// --- ROUTES ---
 
-router.route('/:id')
-  .put(updateCandidate)
-  .delete(deleteCandidate);
+// Parse Resume
+router.post('/parse-resume', upload.single('resume'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const parsedResult = await parseResume(fileBuffer, req.file.mimetype);
+
+    try { fs.unlinkSync(req.file.path); } catch (err) { console.error("Failed to delete temp file:", err); }
+
+    if (parsedResult.success) {
+      res.json({
+        success: true,
+        data: {
+          name: parsedResult.data.name || '',
+          email: parsedResult.data.email || '',
+          contact: parsedResult.data.contact || '',
+          skills: parsedResult.data.skills || '',
+          totalExperience: parsedResult.data.totalExperience || '',
+          position: parsedResult.data.position || '',
+        }
+      });
+    } else {
+      res.json({ success: false, message: 'Could not parse resume', data: {} });
+    }
+  } catch (error) {
+    console.error("Resume parsing error:", error);
+    if (req.file && fs.existsSync(req.file.path)) {
+      try { fs.unlinkSync(req.file.path); } catch (err) {}
+    }
+    res.status(500).json({ success: false, message: 'Error parsing resume', error: error.message });
+  }
+});
+
+// GET ALL
+router.get('/', async (req, res) => {
+  try {
+    let query = {};
+    if (req.user && req.user.role !== 'admin') {
+      query.recruiterId = req.user._id;
+    }
+    const candidates = await Candidate.find(query)
+      .populate('recruiterId', 'name')
+      .sort({ createdAt: -1 });
+    res.json(candidates);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Helper to fix data types from FormData (Multer converts everything to strings)
+const sanitizeBody = (body) => {
+  const data = { ...body };
+  
+  if (typeof data.skills === 'string') {
+    data.skills = data.skills.split(',').map(s => s.trim());
+  }
+  
+  // Convert "true"/"false" strings to Booleans
+  if (data.offersInHand === 'true') data.offersInHand = true;
+  if (data.offersInHand === 'false') data.offersInHand = false;
+  
+  if (data.servingNoticePeriod === 'true') data.servingNoticePeriod = true;
+  if (data.servingNoticePeriod === 'false') data.servingNoticePeriod = false;
+
+  return data;
+};
+
+// CREATE CANDIDATE
+router.post('/', upload.single('resume'), async (req, res) => {
+  try {
+    // Sanitize the body (fix booleans and skills array)
+    let candidateData = sanitizeBody(req.body);
+
+    // Handle File
+    if (req.file) {
+      candidateData.resumeUrl = `/uploads/${req.file.filename}`;
+      candidateData.resumeOriginalName = req.file.originalname;
+    }
+
+    // Handle Recruiter Assignment
+    let targetRecruiterId = req.user._id;
+    let targetRecruiterName = req.user.name;
+
+    if (req.user.role === 'admin' && candidateData.recruiterId) {
+      const assignedRecruiter = await User.findById(candidateData.recruiterId);
+      if (assignedRecruiter) {
+        targetRecruiterId = assignedRecruiter._id;
+        targetRecruiterName = assignedRecruiter.name;
+      }
+    }
+
+    candidateData.recruiterId = targetRecruiterId;
+    candidateData.recruiterName = targetRecruiterName;
+
+    const newCandidate = new Candidate(candidateData);
+    await newCandidate.save();
+    
+    res.status(201).json(newCandidate);
+  } catch (error) {
+    console.error("Create Error:", error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// GET SINGLE
+router.get('/:id', async (req, res) => {
+  try {
+    const candidate = await Candidate.findById(req.params.id).populate('recruiterId', 'name');
+    if (!candidate) return res.status(404).json({ message: 'Candidate not found' });
+
+    if (req.user.role !== 'admin' && candidate.recruiterId._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized to view this candidate' });
+    }
+
+    res.json(candidate);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// UPDATE CANDIDATE
+router.put('/:id', upload.single('resume'), async (req, res) => {
+  try {
+    // Sanitize the body
+    let updateData = sanitizeBody(req.body);
+
+    const existingCandidate = await Candidate.findById(req.params.id);
+    if (!existingCandidate) return res.status(404).json({ message: 'Candidate not found' });
+
+    if (req.user.role !== 'admin' && existingCandidate.recruiterId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    if (req.file) {
+      updateData.resumeUrl = `/uploads/${req.file.filename}`;
+      updateData.resumeOriginalName = req.file.originalname;
+    }
+
+    const updatedCandidate = await Candidate.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    res.json(updatedCandidate);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// DELETE CANDIDATE
+router.delete('/:id', async (req, res) => {
+  try {
+    const candidate = await Candidate.findById(req.params.id);
+    if (!candidate) return res.status(404).json({ message: 'Candidate not found' });
+
+    if (req.user.role !== 'admin' && candidate.recruiterId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    if (candidate.resumeUrl) {
+      const filePath = path.join(process.cwd(), candidate.resumeUrl);
+      if (fs.existsSync(filePath)) {
+        try { fs.unlinkSync(filePath); } catch (e) { console.error("File delete error:", e); }
+      }
+    }
+
+    await Candidate.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Candidate deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
 
 export default router;

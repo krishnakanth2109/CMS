@@ -4,8 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-// Removed useData from imports as we fetch directly now
-// import { useData } from "@/contexts/DataContext"; 
 import { Recruiter, Candidate } from "@/types";
 import {
   AlertTriangle, UserPlus, Search, Mail, Phone, TrendingUp, X, Download, Grid3X3, List, Edit, Trash2, UserX, UserCheck, IdCard, Camera, Briefcase, MoreVertical, Users, Eye, EyeOff, ArrowUpDown
@@ -36,10 +34,9 @@ type ViewMode = "grid" | "list";
 type SortField = "name" | "email" | "recruiterId" | "role" | "submissions" | "interviews" | "offers" | "joined" | "status";
 type SortOrder = "asc" | "desc";
 
-// Extended Candidate interface for frontend mapping if needed
 interface CandidateWithId extends Candidate {
   _id?: string;
-  recruiterId: string; // Ensure string for comparison
+  recruiterId: string;
 }
 
 export default function AdminRecruiters() {
@@ -47,7 +44,7 @@ export default function AdminRecruiters() {
   
   // State for Data
   const [recruiters, setRecruiters] = useState<Recruiter[]>([]);
-  const [candidates, setCandidates] = useState<CandidateWithId[]>([]); // Fetched candidates
+  const [candidates, setCandidates] = useState<CandidateWithId[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // UI State
@@ -63,13 +60,13 @@ export default function AdminRecruiters() {
   
   const [selectedStatsRecruiters, setSelectedStatsRecruiters] = useState<Recruiter[]>([]);
   const [statsModalTitle, setStatsModalTitle] = useState("");
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [statsModalType, setStatsModalType] = useState<'total' | 'active' | 'inactive' | 'roles'>('total');
 
   const [showStatsModal, setShowStatsModal] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [showCandidatesModal, setShowCandidatesModal] = useState(false);
   const [candidatesModalTitle, setCandidatesModalTitle] = useState("");
+  // Used to filter the candidates modal (e.g. only show 'interviews')
+  const [candidateFilterType, setCandidateFilterType] = useState<string | null>(null);
 
   const [selectedRecruiter, setSelectedRecruiter] = useState<Recruiter | null>(null);
   const [recruiterToDelete, setRecruiterToDelete] = useState<Recruiter | null>(null);
@@ -124,8 +121,6 @@ export default function AdminRecruiters() {
     setIsLoading(true);
     try {
       const headers = getAuthHeader();
-      
-      // Fetch Recruiters and Candidates in parallel
       const [recruiterRes, candidateRes] = await Promise.all([
         fetch(`${API_URL}/recruiters`, { headers }),
         fetch(`${API_URL}/candidates`, { headers })
@@ -137,7 +132,6 @@ export default function AdminRecruiters() {
       const recruiterData = await recruiterRes.json();
       const candidateData = await candidateRes.json();
 
-      // Map _id to id for frontend consistency
       const mappedRecruiters = recruiterData.map((r: any) => ({ ...r, id: r._id }));
       const mappedCandidates = candidateData.map((c: any) => ({ ...c, id: c._id }));
 
@@ -146,11 +140,7 @@ export default function AdminRecruiters() {
 
     } catch (error) {
       console.error(error);
-      toast({
-        title: "Error",
-        description: "Failed to load data",
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Failed to load data", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -160,23 +150,41 @@ export default function AdminRecruiters() {
     fetchData();
   }, []);
 
-  // --- Validation Logic ---
+  // --- STRICT VALIDATION LOGIC ---
   const validateForm = (data: any, isEdit = false) => {
     const newErrors: Record<string, string> = {};
     
-    if (!data.name.trim()) newErrors.name = "Name is required";
+    // Name: Required, min length, ALPHABETS ONLY
+    if (!data.name.trim()) {
+        newErrors.name = "Name is required";
+    } else if (!/^[a-zA-Z\s]+$/.test(data.name)) {
+        newErrors.name = "Name should contain only alphabets";
+    } else if (data.name.length < 2) {
+        newErrors.name = "Name too short";
+    }
     
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Email: Strict Regex
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (!data.email.trim()) newErrors.email = "Email is required";
     else if (!emailRegex.test(data.email)) newErrors.email = "Invalid email format";
     
+    // Phone: Exactly 10 digits
     const phoneRegex = /^\d{10}$/;
-    if (data.phone && !phoneRegex.test(data.phone)) newErrors.phone = "Phone must be exactly 10 digits";
+    if (!data.phone.trim()) newErrors.phone = "Phone is required";
+    else if (!phoneRegex.test(data.phone)) newErrors.phone = "Phone must be exactly 10 digits";
     
+    // Recruiter ID: Required
     if (!data.recruiterId.trim()) newErrors.recruiterId = "Recruiter ID is required";
     
-    if (!isEdit && (!data.password || data.password.length < 6)) {
-      newErrors.password = "Password must be at least 6 characters";
+    // Password (Only for Create or if field is not empty in Edit)
+    if (!isEdit) {
+        if (!data.password) newErrors.password = "Password is required";
+        else if (data.password.length < 6) newErrors.password = "Password must be at least 6 characters";
+    } else {
+        // If editing and user typed a password, check length
+        if (data.password && data.password.length < 6) {
+            newErrors.password = "Password must be at least 6 characters";
+        }
     }
 
     setErrors(newErrors);
@@ -184,9 +192,37 @@ export default function AdminRecruiters() {
   };
 
   // --- Handlers ---
+  
+  const handleInputChange = (field: string, value: string, isEdit: boolean) => {
+    // Restrict Phone to numbers only
+    if (field === 'phone') {
+        if (!/^\d*$/.test(value)) return; 
+        if (value.length > 10) return; 
+    }
+
+    // Restrict Name to Alphabets and Spaces only
+    if (field === 'name') {
+        if (!/^[a-zA-Z\s]*$/.test(value)) return;
+    }
+
+    if (errors[field]) {
+        setErrors(prev => {
+            const newErrs = { ...prev };
+            delete newErrs[field];
+            return newErrs;
+        });
+    }
+
+    if (isEdit) {
+        setEditRecruiter(prev => ({ ...prev, [field]: value }));
+    } else {
+        setNewRecruiter(prev => ({ ...prev, [field]: value }));
+    }
+  };
+
   const handleAddRecruiter = async () => {
     if (!validateForm(newRecruiter)) {
-      toast({ title: "Validation Error", description: "Please fix the errors in the form", variant: "destructive" });
+      toast({ title: "Validation Error", description: "Please fix the highlighted errors", variant: "destructive" });
       return;
     }
 
@@ -208,7 +244,7 @@ export default function AdminRecruiters() {
         password: "", profilePicture: "", role: "recruiter"
       });
       setErrors({});
-      fetchData(); // Refresh data
+      fetchData(); 
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -216,7 +252,7 @@ export default function AdminRecruiters() {
 
   const handleEditRecruiter = async () => {
     if (!validateForm(editRecruiter, true)) {
-      toast({ title: "Validation Error", description: "Please fix the errors in the form", variant: "destructive" });
+      toast({ title: "Validation Error", description: "Please fix the highlighted errors", variant: "destructive" });
       return;
     }
 
@@ -234,7 +270,7 @@ export default function AdminRecruiters() {
       toast({ title: "Success", description: "Recruiter updated successfully!" });
       setShowEditModal(false);
       setErrors({});
-      fetchData(); // Refresh data
+      fetchData(); 
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -251,7 +287,7 @@ export default function AdminRecruiters() {
       toast({ title: "Success", description: "Recruiter deleted successfully!" });
       setShowDeleteModal(false);
       setRecruiterToDelete(null);
-      fetchData(); // Refresh data
+      fetchData(); 
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -266,7 +302,7 @@ export default function AdminRecruiters() {
       if (!response.ok) throw new Error('Failed to update status');
       const data = await response.json();
       toast({ title: "Success", description: data.message });
-      fetchData(); // Refresh data
+      fetchData(); 
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -290,7 +326,6 @@ export default function AdminRecruiters() {
 
   // --- Logic & Helpers ---
   const calculateRecruiterStats = (recruiterId: string) => {
-    // Filter based on the real candidates data fetched from backend
     const recruiterCandidates = candidates.filter(candidate => 
       candidate.recruiterId === recruiterId
     );
@@ -355,9 +390,9 @@ export default function AdminRecruiters() {
       reader.onload = (e) => {
         const result = e.target?.result as string;
         if (isEdit) {
-          setEditRecruiter({ ...editRecruiter, profilePicture: result });
+          setEditRecruiter(prev => ({ ...prev, profilePicture: result }));
         } else {
-          setNewRecruiter({ ...newRecruiter, profilePicture: result });
+          setNewRecruiter(prev => ({ ...prev, profilePicture: result }));
         }
         toast({ title: "Success", description: "Picture uploaded" });
       };
@@ -436,8 +471,27 @@ export default function AdminRecruiters() {
   };
 
   const handleStatCardClick = (recruiter: Recruiter, metric: string) => {
-    setCandidatesModalTitle(`${metric} for ${recruiter.name}`);
+    setSelectedRecruiter(recruiter);
+    setCandidatesModalTitle(`${metric} - ${recruiter.name}`);
+    setCandidateFilterType(metric.toLowerCase());
     setShowCandidatesModal(true);
+  };
+
+  const getFilteredCandidatesForModal = () => {
+    if (!selectedRecruiter) return [];
+    let filtered = candidates.filter(c => c.recruiterId === selectedRecruiter.id);
+
+    // Simple heuristic based on title to filter specific statuses if clicked via stats
+    if (candidateFilterType) {
+        if (candidateFilterType.includes('interviews')) {
+            filtered = filtered.filter(c => ['L1 Interview', 'L2 Interview', 'Interview'].includes(c.status));
+        } else if (candidateFilterType.includes('offers')) {
+            filtered = filtered.filter(c => c.status === 'Offer');
+        } else if (candidateFilterType.includes('joined')) {
+            filtered = filtered.filter(c => c.status === 'Joined');
+        }
+    }
+    return filtered;
   };
 
   return (
@@ -544,6 +598,14 @@ export default function AdminRecruiters() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => openEditModal(recruiter)}><Edit className="h-4 w-4 mr-2"/> Edit</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => { setSelectedRecruiter(recruiter); setShowPerformanceModal(true); }}><TrendingUp className="h-4 w-4 mr-2"/> Performance</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => { 
+                                setSelectedRecruiter(recruiter); 
+                                setCandidatesModalTitle(`All Candidates - ${recruiter.name}`);
+                                setCandidateFilterType(null); // No specific filter
+                                setShowCandidatesModal(true); 
+                              }}>
+                                <Users className="h-4 w-4 mr-2"/> View Candidates
+                              </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => handleToggleStatus(recruiter)}>{recruiter.active ? 'Deactivate' : 'Activate'}</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => { setRecruiterToDelete(recruiter); setShowDeleteModal(true); }} className="text-red-600"><Trash2 className="h-4 w-4 mr-2"/> Delete</DropdownMenuItem>
@@ -557,19 +619,19 @@ export default function AdminRecruiters() {
                              <div className="flex items-center gap-2"><Briefcase className="h-4 w-4"/> {recruiter.role}</div>
                            </div>
                            <div className="grid grid-cols-4 gap-2 border-t pt-4 text-center">
-                              <div className="cursor-pointer" onClick={() => handleStatCardClick(recruiter, 'submissions')}>
+                              <div className="cursor-pointer" onClick={() => handleStatCardClick(recruiter, 'Submissions')}>
                                 <div className="font-bold text-lg text-blue-600">{stats.totalSubmissions}</div>
                                 <div className="text-[10px]">Subs</div>
                               </div>
-                              <div className="cursor-pointer" onClick={() => handleStatCardClick(recruiter, 'interviews')}>
+                              <div className="cursor-pointer" onClick={() => handleStatCardClick(recruiter, 'Interviews')}>
                                 <div className="font-bold text-lg text-purple-600">{stats.interviews}</div>
                                 <div className="text-[10px]">Intrvw</div>
                               </div>
-                              <div className="cursor-pointer" onClick={() => handleStatCardClick(recruiter, 'offers')}>
+                              <div className="cursor-pointer" onClick={() => handleStatCardClick(recruiter, 'Offers')}>
                                 <div className="font-bold text-lg text-green-600">{stats.offers}</div>
                                 <div className="text-[10px]">Offer</div>
                               </div>
-                              <div className="cursor-pointer" onClick={() => handleStatCardClick(recruiter, 'joined')}>
+                              <div className="cursor-pointer" onClick={() => handleStatCardClick(recruiter, 'Joined')}>
                                 <div className="font-bold text-lg text-orange-600">{stats.joined}</div>
                                 <div className="text-[10px]">Join</div>
                               </div>
@@ -581,7 +643,7 @@ export default function AdminRecruiters() {
                 </div>
               )}
 
-              {/* List View - UPDATED with Full Column Names */}
+              {/* List View */}
               {viewMode === "list" && (
                 <Card>
                   <CardContent className="p-0 overflow-x-auto">
@@ -597,7 +659,6 @@ export default function AdminRecruiters() {
                           <th className="px-4 py-3">Role</th>
                           <th className="px-4 py-3">Status</th>
                           
-                          {/* Updated Column Headers to Full Names */}
                           <th className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onClick={() => toggleSort('submissions')}>Submissions {getSortIcon('submissions')}</th>
                           <th className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onClick={() => toggleSort('interviews')}>Interviews {getSortIcon('interviews')}</th>
                           <th className="px-4 py-3 text-center cursor-pointer hover:bg-gray-100" onClick={() => toggleSort('offers')}>Offers {getSortIcon('offers')}</th>
@@ -626,23 +687,38 @@ export default function AdminRecruiters() {
                               <td className="px-4 py-3">{recruiter.role}</td>
                               <td className="px-4 py-3">{getStatusBadge(recruiter)}</td>
                               
-                              {/* Stats Cells */}
-                              <td className="px-4 py-3 text-center font-medium text-blue-600 cursor-pointer hover:bg-blue-50 rounded" onClick={() => handleStatCardClick(recruiter, 'submissions')}>
+                              <td className="px-4 py-3 text-center font-medium text-blue-600 cursor-pointer hover:bg-blue-50 rounded" onClick={() => handleStatCardClick(recruiter, 'Submissions')}>
                                 {stats.totalSubmissions}
                               </td>
-                              <td className="px-4 py-3 text-center font-medium text-purple-600 cursor-pointer hover:bg-purple-50 rounded" onClick={() => handleStatCardClick(recruiter, 'interviews')}>
+                              <td className="px-4 py-3 text-center font-medium text-purple-600 cursor-pointer hover:bg-purple-50 rounded" onClick={() => handleStatCardClick(recruiter, 'Interviews')}>
                                 {stats.interviews}
                               </td>
-                              <td className="px-4 py-3 text-center font-medium text-green-600 cursor-pointer hover:bg-green-50 rounded" onClick={() => handleStatCardClick(recruiter, 'offers')}>
+                              <td className="px-4 py-3 text-center font-medium text-green-600 cursor-pointer hover:bg-green-50 rounded" onClick={() => handleStatCardClick(recruiter, 'Offers')}>
                                 {stats.offers}
                               </td>
-                              <td className="px-4 py-3 text-center font-medium text-orange-600 cursor-pointer hover:bg-orange-50 rounded" onClick={() => handleStatCardClick(recruiter, 'joined')}>
+                              <td className="px-4 py-3 text-center font-medium text-orange-600 cursor-pointer hover:bg-orange-50 rounded" onClick={() => handleStatCardClick(recruiter, 'Joined')}>
                                 {stats.joined}
                               </td>
 
                               <td className="px-4 py-3 text-right">
-                                <Button variant="ghost" size="icon" onClick={() => openEditModal(recruiter)}><Edit className="h-4 w-4"/></Button>
-                                <Button variant="ghost" size="icon" onClick={() => { setRecruiterToDelete(recruiter); setShowDeleteModal(true); }} className="text-red-500"><Trash2 className="h-4 w-4"/></Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4"/></Button></DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => openEditModal(recruiter)}><Edit className="h-4 w-4 mr-2"/> Edit</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => { setSelectedRecruiter(recruiter); setShowPerformanceModal(true); }}><TrendingUp className="h-4 w-4 mr-2"/> Performance</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => { 
+                                      setSelectedRecruiter(recruiter); 
+                                      setCandidatesModalTitle(`All Candidates - ${recruiter.name}`);
+                                      setCandidateFilterType(null);
+                                      setShowCandidatesModal(true); 
+                                    }}>
+                                      <Users className="h-4 w-4 mr-2"/> View Candidates
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => handleToggleStatus(recruiter)}>{recruiter.active ? 'Deactivate' : 'Activate'}</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => { setRecruiterToDelete(recruiter); setShowDeleteModal(true); }} className="text-red-600"><Trash2 className="h-4 w-4 mr-2"/> Delete</DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </td>
                             </tr>
                            );
@@ -674,26 +750,43 @@ export default function AdminRecruiters() {
                    <div className="grid grid-cols-2 gap-4">
                      <div>
                         <label className="text-sm font-medium">Recruiter ID *</label>
-                        <Input value={newRecruiter.recruiterId} onChange={e => setNewRecruiter({...newRecruiter, recruiterId: e.target.value})} className={errors.recruiterId ? "border-red-500" : ""} />
+                        <Input 
+                            value={newRecruiter.recruiterId} 
+                            onChange={e => handleInputChange('recruiterId', e.target.value, false)} 
+                            className={errors.recruiterId ? "border-red-500" : ""} 
+                        />
                         {errors.recruiterId && <p className="text-xs text-red-500 mt-1">{errors.recruiterId}</p>}
                      </div>
                      <div>
                         <label className="text-sm font-medium">Full Name *</label>
-                        <Input value={newRecruiter.name} onChange={e => setNewRecruiter({...newRecruiter, name: e.target.value})} className={errors.name ? "border-red-500" : ""} />
+                        <Input 
+                            value={newRecruiter.name} 
+                            onChange={e => handleInputChange('name', e.target.value, false)} 
+                            className={errors.name ? "border-red-500" : ""} 
+                        />
                         {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
                      </div>
                    </div>
                    
                    <div>
                       <label className="text-sm font-medium">Email *</label>
-                      <Input value={newRecruiter.email} onChange={e => setNewRecruiter({...newRecruiter, email: e.target.value})} className={errors.email ? "border-red-500" : ""} />
+                      <Input 
+                        value={newRecruiter.email} 
+                        onChange={e => handleInputChange('email', e.target.value, false)} 
+                        className={errors.email ? "border-red-500" : ""} 
+                      />
                       {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
                    </div>
 
                    <div className="grid grid-cols-2 gap-4">
                      <div>
                         <label className="text-sm font-medium">Phone</label>
-                        <Input value={newRecruiter.phone} onChange={e => setNewRecruiter({...newRecruiter, phone: e.target.value})} maxLength={10} className={errors.phone ? "border-red-500" : ""} />
+                        <Input 
+                            value={newRecruiter.phone} 
+                            onChange={e => handleInputChange('phone', e.target.value, false)} 
+                            maxLength={10} 
+                            className={errors.phone ? "border-red-500" : ""} 
+                        />
                         {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
                      </div>
                      <div>
@@ -703,14 +796,17 @@ export default function AdminRecruiters() {
                    </div>
 
                    <div className="grid grid-cols-2 gap-4">
-                     <div><label className="text-sm font-medium">Username</label><Input value={newRecruiter.username} onChange={e => setNewRecruiter({...newRecruiter, username: e.target.value})} /></div>
+                     <div>
+                        <label className="text-sm font-medium">Username</label>
+                        <Input value={newRecruiter.username} onChange={e => handleInputChange('username', e.target.value, false)} />
+                     </div>
                      <div>
                         <label className="text-sm font-medium">Password *</label>
                         <div className="relative">
                           <Input 
                             type={showPassword ? "text" : "password"} 
                             value={newRecruiter.password} 
-                            onChange={e => setNewRecruiter({...newRecruiter, password: e.target.value})} 
+                            onChange={e => handleInputChange('password', e.target.value, false)} 
                             className={errors.password ? "border-red-500" : ""}
                           />
                           <button 
@@ -753,26 +849,43 @@ export default function AdminRecruiters() {
                    <div className="grid grid-cols-2 gap-4">
                      <div>
                         <label className="text-sm font-medium">Recruiter ID *</label>
-                        <Input value={editRecruiter.recruiterId} onChange={e => setEditRecruiter({...editRecruiter, recruiterId: e.target.value})} className={errors.recruiterId ? "border-red-500" : ""} />
+                        <Input 
+                            value={editRecruiter.recruiterId} 
+                            onChange={e => handleInputChange('recruiterId', e.target.value, true)} 
+                            className={errors.recruiterId ? "border-red-500" : ""} 
+                        />
                         {errors.recruiterId && <p className="text-xs text-red-500 mt-1">{errors.recruiterId}</p>}
                      </div>
                      <div>
                         <label className="text-sm font-medium">Full Name *</label>
-                        <Input value={editRecruiter.name} onChange={e => setEditRecruiter({...editRecruiter, name: e.target.value})} className={errors.name ? "border-red-500" : ""} />
+                        <Input 
+                            value={editRecruiter.name} 
+                            onChange={e => handleInputChange('name', e.target.value, true)} 
+                            className={errors.name ? "border-red-500" : ""} 
+                        />
                         {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
                      </div>
                    </div>
 
                    <div>
                       <label className="text-sm font-medium">Email *</label>
-                      <Input value={editRecruiter.email} onChange={e => setEditRecruiter({...editRecruiter, email: e.target.value})} className={errors.email ? "border-red-500" : ""} />
+                      <Input 
+                        value={editRecruiter.email} 
+                        onChange={e => handleInputChange('email', e.target.value, true)} 
+                        className={errors.email ? "border-red-500" : ""} 
+                      />
                       {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
                    </div>
 
                    <div className="grid grid-cols-2 gap-4">
                      <div>
                         <label className="text-sm font-medium">Phone</label>
-                        <Input value={editRecruiter.phone} onChange={e => setEditRecruiter({...editRecruiter, phone: e.target.value})} maxLength={10} className={errors.phone ? "border-red-500" : ""} />
+                        <Input 
+                            value={editRecruiter.phone} 
+                            onChange={e => handleInputChange('phone', e.target.value, true)} 
+                            maxLength={10} 
+                            className={errors.phone ? "border-red-500" : ""} 
+                        />
                         {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
                      </div>
                      <div>
@@ -782,7 +895,7 @@ export default function AdminRecruiters() {
                    </div>
 
                    <div className="grid grid-cols-2 gap-4">
-                     <div><label className="text-sm font-medium">Username</label><Input value={editRecruiter.username} onChange={e => setEditRecruiter({...editRecruiter, username: e.target.value})} /></div>
+                     <div><label className="text-sm font-medium">Username</label><Input value={editRecruiter.username} onChange={e => handleInputChange('username', e.target.value, true)} /></div>
                      <div>
                         <label className="text-sm font-medium">Password</label>
                         <div className="relative">
@@ -790,7 +903,7 @@ export default function AdminRecruiters() {
                             type={showEditPassword ? "text" : "password"} 
                             placeholder="Leave blank to keep current" 
                             value={editRecruiter.password} 
-                            onChange={e => setEditRecruiter({...editRecruiter, password: e.target.value})} 
+                            onChange={e => handleInputChange('password', e.target.value, true)} 
                           />
                           <button 
                             type="button"
@@ -827,7 +940,7 @@ export default function AdminRecruiters() {
              </div>
           </Dialog>
 
-           {/* Performance/Stats modals structure preserved for layout correctness */}
+           {/* Performance/Stats modals */}
            {showPerformanceModal && selectedRecruiter && (
              <Dialog open={showPerformanceModal} onClose={() => setShowPerformanceModal(false)} className="relative z-50">
                <DialogBackdrop className="fixed inset-0 bg-black/50" />
@@ -856,7 +969,7 @@ export default function AdminRecruiters() {
              </Dialog>
            )}
 
-           {/* Stats Modal (Simplified) */}
+           {/* Stats Modal (Recruiters List) */}
            {showStatsModal && (
              <Dialog open={showStatsModal} onClose={() => setShowStatsModal(false)} className="relative z-50">
                <DialogBackdrop className="fixed inset-0 bg-black/50" />
@@ -878,6 +991,49 @@ export default function AdminRecruiters() {
                   </DialogPanel>
                </div>
              </Dialog>
+           )}
+
+           {/* Candidates List Modal */}
+           {showCandidatesModal && selectedRecruiter && (
+            <Dialog open={showCandidatesModal} onClose={() => setShowCandidatesModal(false)} className="relative z-50">
+              <DialogBackdrop className="fixed inset-0 bg-black/50" />
+              <div className="fixed inset-0 flex items-center justify-center p-4">
+                <DialogPanel className="bg-white dark:bg-gray-900 w-full max-w-4xl rounded-xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
+                  <DialogTitle className="text-xl font-bold mb-4">{candidatesModalTitle}</DialogTitle>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-gray-50 dark:bg-gray-800 text-xs uppercase text-gray-500 font-medium">
+                        <tr>
+                          <th className="p-3">Candidate Name</th>
+                          <th className="p-3">Role</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3">Email</th>
+                          <th className="p-3">Phone</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {getFilteredCandidatesForModal().length > 0 ? (
+                            getFilteredCandidatesForModal().map((candidate, idx) => (
+                              <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
+                                <td className="p-3 font-medium">{candidate.name}</td>
+                                <td className="p-3">{candidate.position}</td>
+                                <td className="p-3"><Badge variant="outline">{candidate.status}</Badge></td>
+                                <td className="p-3 text-gray-500">{candidate.email}</td>
+                                <td className="p-3 text-gray-500">{candidate.contact}</td>
+                              </tr>
+                            ))
+                        ) : (
+                          <tr><td colSpan={5} className="p-4 text-center text-gray-500">No candidates found for this selection.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex justify-end mt-4">
+                    <Button onClick={() => setShowCandidatesModal(false)}>Close</Button>
+                  </div>
+                </DialogPanel>
+              </div>
+            </Dialog>
            )}
            
         </div>
