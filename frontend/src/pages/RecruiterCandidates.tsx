@@ -118,13 +118,12 @@ export default function RecruiterCandidates() {
 
   // --- UPDATED STATUS LIST ---
   const allStatuses = [
-    'Submitted',
     'Shared Profiles',
     'Yet to attend',
     'Turnups',
     'No Show',
     'Selected',
-    'Joinings',
+    'Joined',
     'Rejected',
     'Hold',
     'Backout'
@@ -497,6 +496,7 @@ export default function RecruiterCandidates() {
           </div>
 
           {/* --- 3. UPDATED: Stats Grid with Correct Data Mapping --- */}
+<<<<<<< HEAD
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
             <StatCard
               title="Total Submitted"
@@ -511,6 +511,22 @@ export default function RecruiterCandidates() {
               color="indigo"
               active={activeStatFilter === 'Turnups'}
               onClick={() => setActiveStatFilter('Turnups')}
+=======
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <StatCard 
+              title="Total Submitted" 
+              value={stats.total} 
+              color="blue" 
+              active={activeStatFilter === null} 
+              onClick={() => setActiveStatFilter(null)} 
+            />
+            <StatCard 
+              title="Turnups" 
+              value={stats.turnups} 
+              color="black" 
+              active={activeStatFilter === 'Turnups'} 
+              onClick={() => setActiveStatFilter('Turnups')} 
+>>>>>>> 621aaafdf76a72121c56885d99dae77597366a4a
             />
             <StatCard
               title="No Show"
@@ -533,12 +549,21 @@ export default function RecruiterCandidates() {
               active={activeStatFilter === 'Selected'}
               onClick={() => setActiveStatFilter('Selected')}
             />
+<<<<<<< HEAD
             <StatCard
               title="Rejected"
               value={stats.rejected}
               color="rose"
               active={activeStatFilter === 'Rejected'}
               onClick={() => setActiveStatFilter('Rejected')}
+=======
+            <StatCard 
+              title="Rejected" 
+              value={stats.rejected} 
+              color="red" 
+              active={activeStatFilter === 'Rejected'} 
+              onClick={() => setActiveStatFilter('Rejected')} 
+>>>>>>> 621aaafdf76a72121c56885d99dae77597366a4a
             />
             <StatCard
               title="Hold"
@@ -547,6 +572,7 @@ export default function RecruiterCandidates() {
               active={activeStatFilter === 'Hold'}
               onClick={() => setActiveStatFilter('Hold')}
             />
+<<<<<<< HEAD
             <StatCard
               title="Joinings"
               value={stats.joinings}
@@ -560,6 +586,21 @@ export default function RecruiterCandidates() {
               color="slate"
               active={activeStatFilter === 'Backout'}
               onClick={() => setActiveStatFilter('Backout')}
+=======
+            <StatCard 
+              title="Joined" 
+              value={stats.joined} 
+              color="green" 
+              active={activeStatFilter === 'Joined'} 
+              onClick={() => setActiveStatFilter('Joined')} 
+            />
+            <StatCard 
+              title="Backout" 
+              value={stats.backout} 
+              color="red" 
+              active={activeStatFilter === 'Backout'} 
+              onClick={() => setActiveStatFilter('Backout')} 
+>>>>>>> 621aaafdf76a72121c56885d99dae77597366a4a
             />
             <StatCard
               title="Shared Profiles"
