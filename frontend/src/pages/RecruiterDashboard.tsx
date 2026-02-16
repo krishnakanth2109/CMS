@@ -560,7 +560,7 @@ export default function RecruiterDashboard() {
               iconColor="text-purple-600 dark:text-purple-400" 
             />
             <ProfessionalStatCard 
-              title="Joined Success Rate" 
+              title="Performance" 
               value={`${candidateStats.successRate}%`} 
               icon={TrendingUp} 
               trend={parseFloat(candidateStats.successRate) > 0 ? 1 : 0} 
@@ -572,8 +572,8 @@ export default function RecruiterDashboard() {
           {/* Pipeline Breakdown - Second Row (Status Specific) */}
           <div className="grid gap-3 md:gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             <ProfessionalStatCard 
-              title="Submitted" 
-              value={candidateStats.submitted} 
+              title="Selected" 
+              value={candidateStats.selected} 
               icon={ClipboardList} 
               onClick={handleNavigateToCandidates} 
               borderColor="border-blue-200 dark:border-blue-800" 
@@ -591,7 +591,7 @@ export default function RecruiterDashboard() {
             />
             
             <ProfessionalStatCard 
-              title="Offers" 
+              title="Hold" 
               value={candidateStats.offer} 
               icon={CheckCircle2} 
               onClick={handleNavigateToCandidates} 

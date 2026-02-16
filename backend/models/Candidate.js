@@ -33,7 +33,7 @@ const candidateSchema = mongoose.Schema({
       'Turnups',          // New
       'No Show',          // New
       'Selected',         // New
-      'Joinings',         // New
+      'Joined',         // New
       'Rejected',         // Existing
       'Hold',             // New
       'Backout'           // New

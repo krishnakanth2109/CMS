@@ -118,13 +118,12 @@ export default function RecruiterCandidates() {
   
   // --- UPDATED STATUS LIST ---
   const allStatuses = [
-    'Submitted',
     'Shared Profiles',
     'Yet to attend',
     'Turnups',
     'No Show',
     'Selected',
-    'Joinings',
+    'Joined',
     'Rejected',
     'Hold',
     'Backout'
@@ -485,7 +484,7 @@ export default function RecruiterCandidates() {
           </div>
 
           {/* --- 3. UPDATED: Stats Grid with Correct Data Mapping --- */}
-          <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <StatCard 
               title="Total Submitted" 
               value={stats.total} 
@@ -496,7 +495,7 @@ export default function RecruiterCandidates() {
             <StatCard 
               title="Turnups" 
               value={stats.turnups} 
-              color="indigo" 
+              color="black" 
               active={activeStatFilter === 'Turnups'} 
               onClick={() => setActiveStatFilter('Turnups')} 
             />
@@ -524,7 +523,7 @@ export default function RecruiterCandidates() {
             <StatCard 
               title="Rejected" 
               value={stats.rejected} 
-              color="rose" 
+              color="red" 
               active={activeStatFilter === 'Rejected'} 
               onClick={() => setActiveStatFilter('Rejected')} 
             />
@@ -536,16 +535,16 @@ export default function RecruiterCandidates() {
               onClick={() => setActiveStatFilter('Hold')} 
             />
             <StatCard 
-              title="Joinings" 
-              value={stats.joinings} 
-              color="emerald" 
-              active={activeStatFilter === 'Joinings'} 
-              onClick={() => setActiveStatFilter('Joinings')} 
+              title="Joined" 
+              value={stats.joined} 
+              color="green" 
+              active={activeStatFilter === 'Joined'} 
+              onClick={() => setActiveStatFilter('Joined')} 
             />
             <StatCard 
               title="Backout" 
               value={stats.backout} 
-              color="slate" 
+              color="red" 
               active={activeStatFilter === 'Backout'} 
               onClick={() => setActiveStatFilter('Backout')} 
             />
