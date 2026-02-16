@@ -398,10 +398,12 @@ export default function RecruiterDashboard() {
     
     // Crucial: Explicitly filtering for Rejected
     const rejected = filteredCandidates.filter(c => c.status === 'Rejected').length;
+    const selected = filteredCandidates.filter(c => c.status === 'Selected').length;
+    const hold = filteredCandidates.filter(c => c.status === 'Hold').length;
 
     const successRate = total > 0 ? ((joined / total) * 100).toFixed(1) : '0';
 
-    return { total, submitted, interview, offer, joined, rejected, successRate };
+    return { total, submitted, interview, offer, joined, rejected, selected, hold, successRate };
   }, [filteredCandidates]);
 
   const interviewStats = useMemo(() => {
@@ -431,7 +433,22 @@ export default function RecruiterDashboard() {
   }], [candidateStats]);
 
   // Navigation
-  const handleNavigateToCandidates = () => navigate('/recruiter/candidates');
+  const handleNavigateToCandidates = (status?: string) => {
+    if (status == 'Rejected') {
+      navigate(`/recruiter/candidates?status=${status}`);
+    }else if (status == 'Hold') {
+      navigate(`/recruiter/candidates?status=${status}`);
+    }else if (status == 'Joined') {
+      navigate(`/recruiter/candidates?status=${status}`);
+    }else if (status == 'Submitted') {
+      navigate(`/recruiter/candidates?status=${status}`);
+    }else if (status == 'Selected') {
+      navigate(`/recruiter/candidates?status=${status}`);
+    }
+     else {
+      navigate('/recruiter/candidates');
+    }
+  };
   const handleNavigateToAssignments = () => navigate('/recruiter/assignments');
   const handleNavigateToSchedules = () => navigate('/recruiter/schedules');
   const handleNavigateToMessages = () => navigate('/recruiter/messages');
@@ -575,7 +592,7 @@ export default function RecruiterDashboard() {
               title="Selected" 
               value={candidateStats.selected} 
               icon={ClipboardList} 
-              onClick={handleNavigateToCandidates} 
+              onClick={() => handleNavigateToCandidates('Selected')} 
               borderColor="border-blue-200 dark:border-blue-800" 
               iconColor="text-blue-600 dark:text-blue-400" 
             />
@@ -585,16 +602,16 @@ export default function RecruiterDashboard() {
               title="Rejected" 
               value={candidateStats.rejected} 
               icon={XCircle} 
-              onClick={handleNavigateToCandidates} 
+              onClick={() => handleNavigateToCandidates('Rejected')} 
               borderColor="border-red-200 dark:border-red-800" 
               iconColor="text-red-600 dark:text-red-400" 
             />
             
             <ProfessionalStatCard 
               title="Hold" 
-              value={candidateStats.offer} 
+              value={candidateStats.hold} 
               icon={CheckCircle2} 
-              onClick={handleNavigateToCandidates} 
+              onClick={() => handleNavigateToCandidates('Hold')} 
               borderColor="border-purple-200 dark:border-purple-800" 
               iconColor="text-purple-600 dark:text-purple-400" 
             />
@@ -603,7 +620,7 @@ export default function RecruiterDashboard() {
               title="Joined" 
               value={candidateStats.joined} 
               icon={UserCheck} 
-              onClick={handleNavigateToCandidates} 
+               onClick={() => handleNavigateToCandidates('Joined')} 
               borderColor="border-emerald-200 dark:border-emerald-800" 
               iconColor="text-emerald-600 dark:text-emerald-400" 
             />

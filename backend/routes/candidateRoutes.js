@@ -6,6 +6,7 @@ import Candidate from '../models/Candidate.js';
 import User from '../models/User.js'; 
 import { parseResume } from './resumeParser.js'; 
 import { protect } from '../middleware/authMiddleware.js'; 
+import { updateCandidateStatus, updateCandidateRemarks, inlineUpdateCandidate } from '../controllers/candidateStatusController.js';
 
 const router = express.Router();
 
@@ -165,6 +166,11 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+// Specialized status/remarks/inline update routes
+router.put('/:id/status', updateCandidateStatus);
+router.put('/:id/remarks', updateCandidateRemarks);
+router.put('/:id/inline-update', inlineUpdateCandidate);
 
 // UPDATE CANDIDATE
 router.put('/:id', upload.single('resume'), async (req, res) => {
