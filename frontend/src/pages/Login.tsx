@@ -12,7 +12,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false); // State for password toggle
   const [loading, setLoading] = useState(false);
-  
+
   const { login } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -23,10 +23,17 @@ export default function Login() {
 
     try {
       const success = await login(username, password);
-      
+
       if (success) {
         const user = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
-        navigate(user.role === 'admin' ? '/admin' : '/recruiter');
+        if (user.role === 'admin') {
+          navigate('/admin');
+        } else if (user.role === 'recruiter') {
+          navigate('/recruiter'); // Make sure this path exists in App.tsx
+        } else {
+          // Fallback or error
+          navigate('/login');
+        }
         toast({
           title: 'Welcome back!',
           description: `Logged in as ${username}`,
@@ -39,19 +46,19 @@ export default function Login() {
         });
       }
     } catch (error) {
-        toast({
-            title: 'Error',
-            description: 'Something went wrong. Please try again.',
-            variant: 'destructive',
-        });
+      toast({
+        title: 'Error',
+        description: 'Something went wrong. Please try again.',
+        variant: 'destructive',
+      });
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen w-full flex bg-background">
-      
+
       {/* Left Side: Visuals & Branding (Hidden on small screens) */}
       <div className="hidden lg:flex w-1/2 bg-zinc-900 relative overflow-hidden items-center justify-center p-12 text-white">
         {/* Abstract Background Shapes */}
@@ -62,20 +69,20 @@ export default function Login() {
         <div className="relative z-10 max-w-lg space-y-8">
           {/* Logo Redesign */}
           <div className="w-24 h-24 bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center shadow-2xl mb-8 border border-white/10">
-             <img 
-               src="https://image2url.com/images/1764921567560-55d1b6d6-49f3-4473-82e3-1cdd2f7c19c2.jpg"  
-               alt="Brand Logo" 
-               className="w-250 h-256 object-contain"
-             />
+            <img
+              src="https://image2url.com/images/1764921567560-55d1b6d6-49f3-4473-82e3-1cdd2f7c19c2.jpg"
+              alt="Brand Logo"
+              className="w-250 h-256 object-contain"
+            />
           </div>
-          
+
           <h1 className="text-5xl font-extrabold tracking-tight leading-tight">
-            Streamline Your <br/>
+            Streamline Your <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
               Hiring Process
             </span>
           </h1>
-          
+
           <p className="text-lg text-zinc-300 leading-relaxed">
             The all-in-one dashboard for modern recruiters. Manage candidates, track interviews, and analyze performance in one place.
           </p>
@@ -94,7 +101,7 @@ export default function Login() {
       {/* Right Side: Login Form */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white dark:bg-zinc-950">
         <div className="w-full max-w-md space-y-8">
-          
+
           <div className="text-center lg:text-left space-y-2">
             <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-white">
               Welcome back
@@ -149,7 +156,7 @@ export default function Login() {
 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                 {/* Optional Checkbox for Remember Me could go here */}
+                {/* Optional Checkbox for Remember Me could go here */}
               </div>
               <a href="#" className="text-sm font-medium text-blue-600 hover:text-blue-500 hover:underline">
                 Forgot password?

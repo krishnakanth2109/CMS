@@ -2,8 +2,8 @@ import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 
 // Generate JWT Token
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
+const generateToken = (id, role) => {
+  return jwt.sign({ id, role }, process.env.JWT_SECRET, {
     expiresIn: '30d',
   });
 };
@@ -35,7 +35,7 @@ export const loginUser = async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
-        token: generateToken(user._id),
+        token: generateToken(user._id, user.role),
       });
     } else {
       res.status(401).json({ message: 'Invalid email or password' });
@@ -53,8 +53,8 @@ export const registerUser = async (req, res) => {
   const { username, password, name, role, email } = req.body;
 
   try {
-    const userExists = await User.findOne({ 
-      $or: [{ username }, { email }] 
+    const userExists = await User.findOne({
+      $or: [{ username }, { email }]
     });
 
     if (userExists) {
@@ -63,7 +63,7 @@ export const registerUser = async (req, res) => {
 
     const user = await User.create({
       username,
-      email, 
+      email,
       password,
       name,
       role: role || 'recruiter',
@@ -77,7 +77,7 @@ export const registerUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        token: generateToken(user._id),
+        token: generateToken(user._id, user.role),
       });
     } else {
       res.status(400).json({ message: 'Invalid user data' });
@@ -122,7 +122,7 @@ export const updateUserProfile = async (req, res) => {
     if (user) {
       user.name = req.body.name || user.name;
       user.email = req.body.email || user.email;
-      
+
       // Only update password if sent and not empty
       if (req.body.password && req.body.password.trim() !== '') {
         user.password = req.body.password;
@@ -137,19 +137,19 @@ export const updateUserProfile = async (req, res) => {
         name: updatedUser.name,
         email: updatedUser.email,
         role: updatedUser.role,
-        token: generateToken(updatedUser._id),
+        token: generateToken(updatedUser._id, updatedUser.role),
       });
     } else {
       res.status(404).json({ message: 'User not found' });
     }
   } catch (error) {
     console.error('Update Profile Error:', error);
-    
+
     // Handle duplicate key error (e.g., changing email to one that exists)
     if (error.code === 11000) {
       return res.status(400).json({ message: 'Email or Username already in use' });
     }
-    
+
     // Handle Mongoose validation errors
     if (error.name === 'ValidationError') {
       return res.status(400).json({ message: error.message });

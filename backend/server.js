@@ -16,6 +16,7 @@ import clientRoutes from './routes/clientRoutes.js';
 import jobRoutes from './routes/jobRoutes.js';
 import interviewRoutes from './routes/interviewRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
+import resumeRoutes from './routes/resumeRoutes.js';
 
 dotenv.config();
 
@@ -71,7 +72,9 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Database Connection
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URL);
+    await mongoose.connect(process.env.MONGO_URI, {
+      dbName: process.env.DB_NAME || 'cms_resume'
+    });
     console.log('MongoDB Connected');
   } catch (error) {
     console.error('Database connection error:', error.message);
@@ -112,6 +115,7 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/resume', resumeRoutes); // Resume Parsing Route
 
 // Fallback Routes (for legacy support if needed)
 app.use('/auth', authRoutes);

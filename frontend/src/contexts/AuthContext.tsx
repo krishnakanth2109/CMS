@@ -21,7 +21,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const savedUser = sessionStorage.getItem('currentUser');
     const savedToken = sessionStorage.getItem('authToken');
-    
+
     if (savedUser && savedToken) {
       setUser(JSON.parse(savedUser));
       setToken(savedToken);
@@ -43,26 +43,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const data = await response.json();
-      
-      // FIX: Map _id to id and satisfy the User type
+
       const userData = {
-        id: data._id, // Map MongoDB _id to frontend id
+        id: data._id,
         username: data.username,
-        role: data.role,
+        email: data.email, // Add email
+        role: data.role,   // Ensure role is captured
         name: data.name,
-        // We don't store password in state, but if the type requires it, 
-        // we cast it to unknown first to avoid the TS error.
       };
 
-      // FIX: Force cast to User type to resolve the "missing properties" error
       const finalUser = userData as unknown as User;
 
       setUser(finalUser);
       setToken(data.token);
 
+      // Store in session
       sessionStorage.setItem('currentUser', JSON.stringify(finalUser));
       sessionStorage.setItem('authToken', data.token);
-      
+
       return true;
     } catch (error) {
       console.error("Login error:", error);

@@ -28,17 +28,17 @@ interface RecruiterSample extends Omit<Recruiter, 'stats'> {
 // Users Data
 // -----------------------------
 export const users: User[] = [
-  { id: 'admin-1', username: 'admin', password: 'admin123', role: 'admin', name: 'Administrator' },
-  { id: 'rec-1', username: 'sandeep', password: 'pass123', role: 'recruiter', name: 'Sandeep Kumar' },
-  { id: 'rec-2', username: 'alice', password: 'pass123', role: 'recruiter', name: 'Alice Johnson' },
-  { id: 'rec-3', username: 'lisa', password: 'pass123', role: 'recruiter', name: 'Lisa Chen' },
-  { id: 'rec-4', username: 'john', password: 'pass123', role: 'recruiter', name: 'John Smith' },
-  { id: 'rec-5', username: 'rahul', password: 'pass123', role: 'recruiter', name: 'Rahul Sharma' },
-  { id: 'rec-6', username: 'priya', password: 'pass123', role: 'recruiter', name: 'Priya Patel' },
-  { id: 'rec-7', username: 'mohan', password: 'pass123', role: 'recruiter', name: 'Mohan Das' },
-  { id: 'rec-8', username: 'anita', password: 'pass123', role: 'recruiter', name: 'Anita Roy' },
-  { id: 'rec-9', username: 'rohit', password: 'pass123', role: 'recruiter', name: 'Rohit Verma' },
-  { id: 'rec-10', username: 'kavya', password: 'pass123', role: 'recruiter', name: 'Kavya Menon' },
+  { id: 'admin-1', username: 'admin', password: '', role: 'admin', name: 'Administrator' },
+  { id: 'rec-1', username: 'sandeep', password: '', role: 'recruiter', name: 'Sandeep Kumar' },
+  { id: 'rec-2', username: 'alice', password: '', role: 'recruiter', name: 'Alice Johnson' },
+  { id: 'rec-3', username: 'lisa', password: '', role: 'recruiter', name: 'Lisa Chen' },
+  { id: 'rec-4', username: 'john', password: '', role: 'recruiter', name: 'John Smith' },
+  { id: 'rec-5', username: 'rahul', password: '', role: 'recruiter', name: 'Rahul Sharma' },
+  { id: 'rec-6', username: 'priya', password: '', role: 'recruiter', name: 'Priya Patel' },
+  { id: 'rec-7', username: 'mohan', password: '', role: 'recruiter', name: 'Mohan Das' },
+  { id: 'rec-8', username: 'anita', password: '', role: 'recruiter', name: 'Anita Roy' },
+  { id: 'rec-9', username: 'rohit', password: '', role: 'recruiter', name: 'Rohit Verma' },
+  { id: 'rec-10', username: 'kavya', password: '', role: 'recruiter', name: 'Kavya Menon' },
 ];
 
 // -----------------------------
@@ -186,7 +186,7 @@ export const sampleRecruiters: Recruiter[] = users
     const userCandidates = initialCandidates.filter((c) => c.recruiterId === u.id);
     const stats = {
       totalSubmissions: userCandidates.length,
-      interviews: userCandidates.filter((c) => 
+      interviews: userCandidates.filter((c) =>
         ['L1 Interview', 'L2 Interview', 'Final Interview', 'Technical Interview', 'HR Interview', 'Interview'].includes(c.status)
       ).length,
       offers: userCandidates.filter((c) => c.status === 'Offer').length,
