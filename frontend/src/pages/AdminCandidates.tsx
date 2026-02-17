@@ -26,7 +26,8 @@ import {
   Search, Filter, Download, User, Phone, Mail, Building, 
   Check, Plus, Edit, Eye, LayoutGrid, List, 
   FileText, Trash2, MessageSquare, IndianRupee, UserCircle,
-  Loader2, Ban, Award, Calendar, X, MessageCircle
+  Loader2, Ban, Award, Calendar, X, MessageCircle, Users,
+  ArrowUpDown, ArrowUp, ArrowDown // Added icons for sorting
 } from 'lucide-react';
 import { CandidateStatus, Candidate, Recruiter } from '@/types';
 import { useToast } from '@/hooks/use-toast';
@@ -70,8 +71,15 @@ export default function AdminCandidates() {
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null);
 
+  // Sorting State
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+
   // Selection State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  
+  // Bulk Assign State
+  const [isBulkAssignDialogOpen, setIsBulkAssignDialogOpen] = useState(false);
+  const [bulkRecruiterId, setBulkRecruiterId] = useState<string>('');
 
   // Dialog States
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -103,9 +111,9 @@ export default function AdminCandidates() {
     ectc: '',
     
     // NEW FIELDS
-    servingNoticePeriod: 'false', // stored as string for Select, converted later
+    servingNoticePeriod: 'false',
     noticePeriodDays: '',
-    offersInHand: 'false',        // stored as string for Select
+    offersInHand: 'false',
     offerPackage: '',
 
     notes: '',
@@ -129,6 +137,7 @@ export default function AdminCandidates() {
       if (resCand.ok) {
         const data = await resCand.json();
         const mappedCandidates = data.map((c: any) => ({ ...c, id: c._id }));
+        // Default sort by date added
         mappedCandidates.sort((a: any, b: any) => new Date(b.createdAt || b.dateAdded).getTime() - new Date(a.createdAt || a.dateAdded).getTime());
         setCandidates(mappedCandidates);
       }
@@ -155,14 +164,12 @@ export default function AdminCandidates() {
     const newErrors: Record<string, string> = {};
     const data = formData;
 
-    // 1. Name validation (First Letter Uppercase)
     if (!data.name.trim()) {
       newErrors.name = "Full Name is required";
     } else if (!/^[A-Z][a-zA-Z\s]*$/.test(data.name)) {
       newErrors.name = "Name must start with an Uppercase letter and contain only alphabets";
     }
 
-    // 2. Email Validation
     const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
     if (!data.email.trim()) {
       newErrors.email = "Email is required";
@@ -170,7 +177,6 @@ export default function AdminCandidates() {
       newErrors.email = "Invalid email format";
     }
 
-    // 3. Contact Validation
     if (!data.contact.trim()) {
       newErrors.contact = "Phone number is required";
     } else if (data.contact.length !== 10) {
@@ -182,7 +188,6 @@ export default function AdminCandidates() {
     if (!data.skills.trim()) newErrors.skills = "Skills are required";
     if (!data.recruiterId) newErrors.recruiterId = "Please assign a recruiter";
 
-    // Conditional Validation (Optional, but good for UX)
     if (data.servingNoticePeriod === 'true' && !data.noticePeriodDays) {
         newErrors.noticePeriodDays = "Please specify days";
     }
@@ -194,9 +199,19 @@ export default function AdminCandidates() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // --- Filtering ---
+  // --- Sorting Handler ---
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  // --- Filtering & Sorting ---
   const filteredCandidates = useMemo(() => {
-    return candidates.filter(c => {
+    // 1. Filter
+    let result = candidates.filter(c => {
       const matchesSearch = c.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             c.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                             (c.candidateId && c.candidateId.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -220,17 +235,80 @@ export default function AdminCandidates() {
 
       return matchesSearch && matchesStatus && matchesRecruiter && statCardMatch;
     });
-  }, [candidates, searchTerm, statusFilter, recruiterFilter, activeStatFilter]);
+
+    // 2. Sort
+    if (sortConfig !== null) {
+      result.sort((a, b) => {
+        // Safe access for candidateId
+        const aValue = (sortConfig.key === 'candidateId' ? a.candidateId : (a as any)[sortConfig.key]) || '';
+        const bValue = (sortConfig.key === 'candidateId' ? b.candidateId : (b as any)[sortConfig.key]) || '';
+
+        if (aValue < bValue) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+
+    return result;
+  }, [candidates, searchTerm, statusFilter, recruiterFilter, activeStatFilter, sortConfig]);
 
   // --- Handlers ---
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      // Select all visible candidates (filtered)
+      setSelectedIds(filteredCandidates.map(c => c._id || c.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    if (checked) setSelectedIds(prev => [...prev, id]);
+    else setSelectedIds(prev => prev.filter(item => item !== id));
+  };
+
+  const handleBulkAssign = async () => {
+    if(!bulkRecruiterId) {
+      toast({ title: "Error", description: "Please select a recruiter", variant: "destructive" });
+      return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${API_URL}/candidates/bulk-assign`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+        body: JSON.stringify({
+          candidateIds: selectedIds,
+          recruiterId: bulkRecruiterId
+        })
+      });
+
+      const data = await response.json();
+      if(response.ok) {
+        toast({ title: "Success", description: data.message });
+        setIsBulkAssignDialogOpen(false);
+        setSelectedIds([]);
+        fetchData();
+      } else {
+        throw new Error(data.message);
+      }
+    } catch(error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      
       setIsParsing(true);
-      toast({ title: "Parsing Resume", description: "Extracting data, please wait..." });
-
       const uploadData = new FormData();
       uploadData.append('resume', file);
 
@@ -240,13 +318,10 @@ export default function AdminCandidates() {
           headers: getAuthHeader(),
           body: uploadData
         });
-
         const result = await response.json();
-        if (!response.ok) throw new Error(result.message || 'Parsing failed');
+        if (!response.ok) throw new Error(result.message);
 
         const extractedData = result.data || result;
-
-        // Auto-fill
         setFormData(prev => ({
           ...prev,
           name: extractedData.name || prev.name,
@@ -257,8 +332,7 @@ export default function AdminCandidates() {
           position: extractedData.position || prev.position,
           notes: prev.notes ? prev.notes : "Auto-extracted from resume."
         }));
-
-        toast({ title: "Success", description: "Form fields populated from resume!" });
+        toast({ title: "Success", description: "Form populated from resume!" });
       } catch (error) {
         toast({ title: "Error", description: "Could not auto-fill form.", variant: "destructive" });
       } finally {
@@ -270,26 +344,18 @@ export default function AdminCandidates() {
 
   const handleInputChange = (field: string, value: string) => {
     let newValue = value;
-
-    // 1. Contact: Numbers only, limit to 10
     if (field === 'contact') {
       newValue = value.replace(/\D/g, '');
       if (newValue.length > 10) return;
     }
-
-    // 2. Experience & CTC
-    if (field === 'totalExperience' || field === 'relevantExperience' || field === 'ctc' || field === 'ectc') {
+    if (['totalExperience', 'relevantExperience', 'ctc', 'ectc'].includes(field)) {
        if (!/^\d*\.?\d*$/.test(value)) return;
     }
-
     setFormData(prev => ({ ...prev, [field]: newValue }));
-    
     if (errors[field]) {
-      setErrors(prev => {
-        const newErrs = { ...prev };
-        delete newErrs[field];
-        return newErrs;
-      });
+      const newErrs = { ...prev };
+      delete newErrs[field];
+      setErrors(newErrs);
     }
   };
 
@@ -298,12 +364,7 @@ export default function AdminCandidates() {
       name: '', email: '', contact: '', position: '', skills: '', client: '',
       status: 'Submitted', recruiterId: '', assignedJobId: '',
       totalExperience: '', relevantExperience: '', ctc: '', ectc: '', 
-      
-      servingNoticePeriod: 'false',
-      noticePeriodDays: '',
-      offersInHand: 'false',
-      offerPackage: '',
-
+      servingNoticePeriod: 'false', noticePeriodDays: '', offersInHand: 'false', offerPackage: '',
       notes: '', dateAdded: new Date().toISOString().split('T')[0],
     });
     setResumeFile(null);
@@ -337,13 +398,10 @@ export default function AdminCandidates() {
       relevantExperience: c.relevantExperience ? String(c.relevantExperience) : '',
       ctc: c.ctc ? String(c.ctc) : '',
       ectc: c.ectc ? String(c.ectc) : '',
-      
-      // Map New Fields
       servingNoticePeriod: c.servingNoticePeriod ? 'true' : 'false',
       noticePeriodDays: c.noticePeriodDays || '',
       offersInHand: c.offersInHand ? 'true' : 'false',
       offerPackage: c.offerPackage || '',
-
       notes: c.notes || '',
       dateAdded: c.dateAdded ? new Date(c.dateAdded).toISOString().split('T')[0] : '',
     });
@@ -352,67 +410,41 @@ export default function AdminCandidates() {
 
   const handleSubmit = async () => {
     if (!validateForm()) {
-      toast({ 
-        title: "Validation Error", 
-        description: "Please fix the errors highlighted in red.", 
-        variant: "destructive" 
-      });
+      toast({ title: "Validation Error", description: "Please fix the errors.", variant: "destructive" });
       return;
     }
-
     setIsSubmitting(true);
     try {
-      const url = isEditMode 
-        ? `${API_URL}/candidates/${selectedCandidateId}`
-        : `${API_URL}/candidates`;
-      
+      const url = isEditMode ? `${API_URL}/candidates/${selectedCandidateId}` : `${API_URL}/candidates`;
       const method = isEditMode ? 'PUT' : 'POST';
-
       const response = await fetch(url, {
         method,
-        headers: { 
-          'Content-Type': 'application/json',
-          ...getAuthHeader() 
-        },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
         body: JSON.stringify(formData) 
       });
-
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Operation failed');
-
-      toast({ title: "Success", description: `Candidate ${isEditMode ? 'Updated' : 'Added'} Successfully` });
+      if (!response.ok) throw new Error(data.message);
+      toast({ title: "Success", description: `Candidate ${isEditMode ? 'Updated' : 'Added'}` });
       setIsDialogOpen(false);
       fetchData(); 
     } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Could not save candidate", variant: "destructive" });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // --- Helpers ---
   const handleWhatsApp = (c: BackendCandidate) => {
     if (!c.contact) return;
     let phone = c.contact.replace(/\D/g, ''); 
     if (phone.length === 10) phone = '91' + phone;
-    const firstName = c.name.split(' ')[0];
-    const message = `Hi ${firstName}, this is regarding your job application for the ${c.position} position at ${c.client}. Are you available?`;
+    const message = `Hi ${c.name.split(' ')[0]}, regarding your job application at ${c.client}.`;
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   const copyCandidateId = (id: string) => {
     navigator.clipboard.writeText(id);
     toast({ title: "Copied ID", description: id });
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) setSelectedIds(filteredCandidates.map(c => c._id || c.id));
-    else setSelectedIds([]);
-  };
-
-  const handleSelectOne = (id: string, checked: boolean) => {
-    if (checked) setSelectedIds(prev => [...prev, id]);
-    else setSelectedIds(prev => prev.filter(item => item !== id));
   };
   
   const getStatusBadgeVariant = (status: string) => {
@@ -449,6 +481,17 @@ export default function AdminCandidates() {
               <p className="text-slate-500">View and manage candidates across all recruiters</p>
             </div>
             <div className="flex gap-3">
+              {/* BULK ACTION BUTTON */}
+              {selectedIds.length > 0 && (
+                 <Button 
+                   onClick={() => setIsBulkAssignDialogOpen(true)} 
+                   variant="secondary" 
+                   className="animate-in fade-in slide-in-from-top-2"
+                 >
+                   <Users className="mr-2 h-4 w-4"/> Assign {selectedIds.length} Recruiter(s)
+                 </Button>
+              )}
+              
               <Button onClick={handleOpenAddDialog} className="bg-blue-600 hover:bg-blue-700"><Plus className="mr-2 h-4 w-4"/> Add Candidate</Button>
             </div>
           </div>
@@ -522,10 +565,30 @@ export default function AdminCandidates() {
                   <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-800 whitespace-nowrap">
                     <tr>
                       <th className="p-4 w-12">
-                        <input type="checkbox" className="h-4 w-4 rounded border-slate-300" checked={selectedIds.length > 0 && selectedIds.length === filteredCandidates.length} onChange={(e) => handleSelectAll(e.target.checked)}/>
+                        <input 
+                          type="checkbox" 
+                          className="h-4 w-4 rounded border-slate-300" 
+                          checked={filteredCandidates.length > 0 && selectedIds.length === filteredCandidates.length} 
+                          onChange={(e) => handleSelectAll(e.target.checked)}
+                        />
                       </th>
                       <th className="p-3 min-w-[50px]">S.No</th>
-                      <th className="p-3 min-w-[100px]">Candidate ID</th>
+                      
+                      {/* SORTABLE CANDIDATE ID HEADER */}
+                      <th 
+                        className="p-3 min-w-[100px] cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        onClick={() => handleSort('candidateId')}
+                      >
+                         <div className="flex items-center gap-1">
+                           Candidate ID
+                           {sortConfig?.key === 'candidateId' ? (
+                              sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4"/> : <ArrowDown className="h-4 w-4"/>
+                           ) : (
+                              <ArrowUpDown className="h-4 w-4 text-slate-400"/>
+                           )}
+                         </div>
+                      </th>
+
                       <th className="p-3 min-w-[200px]">Name</th>
                       <th className="p-3 min-w-[150px]">Phone Number</th>
                       <th className="p-3 min-w-[200px]">Email</th>
@@ -542,7 +605,12 @@ export default function AdminCandidates() {
                     {filteredCandidates.map((c, index) => (
                       <tr key={c._id || c.id} className={c.active === false ? "bg-slate-50 dark:bg-slate-900/50" : "hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"}>
                         <td className="p-3 pl-4">
-                          <input type="checkbox" className="h-4 w-4 rounded border-slate-300" checked={selectedIds.includes(c._id || c.id)} onChange={(e) => handleSelectOne(c._id || c.id, e.target.checked)}/>
+                          <input 
+                            type="checkbox" 
+                            className="h-4 w-4 rounded border-slate-300" 
+                            checked={selectedIds.includes(c._id || c.id)} 
+                            onChange={(e) => handleSelectOne(c._id || c.id, e.target.checked)}
+                          />
                         </td>
                         <td className="p-3 text-slate-500">{index + 1}</td>
                         <td className="p-3 font-mono text-xs font-bold text-blue-600 cursor-pointer" onClick={() => copyCandidateId(getCandidateId(c))}>
@@ -612,6 +680,13 @@ export default function AdminCandidates() {
                   <CardContent className="p-6">
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex gap-3">
+                         {/* Checkbox for Grid View */}
+                         <input 
+                            type="checkbox" 
+                            className="h-4 w-4 mt-1 rounded border-slate-300" 
+                            checked={selectedIds.includes(c._id || c.id)} 
+                            onChange={(e) => handleSelectOne(c._id || c.id, e.target.checked)}
+                          />
                         <Avatar className="h-10 w-10">
                           <AvatarFallback className="bg-blue-50 text-blue-600 font-semibold">{getInitials(c.name)}</AvatarFallback>
                         </Avatar>
@@ -675,7 +750,6 @@ export default function AdminCandidates() {
                    <div className="font-medium">{viewCandidate?.totalExperience} Yrs</div>
                </div>
                
-               {/* New Detail Fields */}
                {viewCandidate?.servingNoticePeriod && (
                  <div className="flex flex-col gap-1">
                    <Label className="text-xs text-slate-500">Notice Period</Label>
@@ -708,8 +782,6 @@ export default function AdminCandidates() {
             </DialogHeader>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-               
-               {/* Resume Upload - Only visible in Add Mode */}
                {!isEditMode && (
                  <div className="col-span-1 md:col-span-2 space-y-2 p-4 border border-dashed border-blue-200 bg-blue-50/50 rounded-lg">
                     <div className="flex justify-between items-center">
@@ -724,49 +796,42 @@ export default function AdminCandidates() {
                       className="bg-white"
                       disabled={isParsing}
                     />
-                    <p className="text-[10px] text-slate-500">Upload a resume to automatically extract Name, Email, Phone, Skills and Experience. The file will not be saved.</p>
+                    <p className="text-[10px] text-slate-500">Upload a resume to automatically extract data.</p>
                  </div>
                )}
 
-               {/* Existing Fields */}
                <div className="space-y-2">
-                 <Label className={errors.name ? "text-red-500" : ""}>Full Name *</Label>
+                 <Label>Full Name *</Label>
                  <Input value={formData.name} onChange={e => handleInputChange('name', e.target.value)} className={errors.name ? "border-red-500" : ""} />
-                 {errors.name && <span className="text-xs text-red-500">{errors.name}</span>}
                </div>
 
                <div className="space-y-2">
-                 <Label className={errors.email ? "text-red-500" : ""}>Email *</Label>
-                 <Input value={formData.email} onChange={e => handleInputChange('email', e.target.value)} className={errors.email ? "border-red-500" : ""} placeholder="user@example.com" />
-                 {errors.email && <span className="text-xs text-red-500">{errors.email}</span>}
+                 <Label>Email *</Label>
+                 <Input value={formData.email} onChange={e => handleInputChange('email', e.target.value)} className={errors.email ? "border-red-500" : ""} />
                </div>
 
                <div className="space-y-2">
-                 <Label className={errors.contact ? "text-red-500" : ""}>Phone *</Label>
-                 <Input value={formData.contact} onChange={e => handleInputChange('contact', e.target.value)} className={errors.contact ? "border-red-500" : ""} placeholder="10 digit number" />
-                 {errors.contact && <span className="text-xs text-red-500">{errors.contact}</span>}
+                 <Label>Phone *</Label>
+                 <Input value={formData.contact} onChange={e => handleInputChange('contact', e.target.value)} className={errors.contact ? "border-red-500" : ""} />
                </div>
 
                <div className="space-y-2">
-                 <Label className={errors.position ? "text-red-500" : ""}>Position *</Label>
+                 <Label>Position *</Label>
                  <Input value={formData.position} onChange={e => handleInputChange('position', e.target.value)} className={errors.position ? "border-red-500" : ""} />
-                 {errors.position && <span className="text-xs text-red-500">{errors.position}</span>}
                </div>
 
                <div className="space-y-2">
-                 <Label className={errors.client ? "text-red-500" : ""}>Client *</Label>
+                 <Label>Client *</Label>
                  <Input value={formData.client} onChange={e => handleInputChange('client', e.target.value)} className={errors.client ? "border-red-500" : ""} />
-                 {errors.client && <span className="text-xs text-red-500">{errors.client}</span>}
                </div>
 
                <div className="space-y-2">
-                 <Label className={errors.skills ? "text-red-500" : ""}>Skills *</Label>
-                 <Input value={formData.skills} onChange={e => handleInputChange('skills', e.target.value)} className={errors.skills ? "border-red-500" : ""} placeholder="e.g. Java, React, Python"/>
-                 {errors.skills && <span className="text-xs text-red-500">{errors.skills}</span>}
+                 <Label>Skills *</Label>
+                 <Input value={formData.skills} onChange={e => handleInputChange('skills', e.target.value)} className={errors.skills ? "border-red-500" : ""} />
                </div>
 
                <div className="space-y-2">
-                 <Label className={errors.recruiterId ? "text-red-500" : ""}>Assign Recruiter *</Label>
+                 <Label>Assign Recruiter *</Label>
                  <Select value={formData.recruiterId} onValueChange={(val) => handleInputChange('recruiterId', val)}>
                     <SelectTrigger className={errors.recruiterId ? "border-red-500" : ""}><SelectValue placeholder="Select Recruiter"/></SelectTrigger>
                     <SelectContent>
@@ -776,7 +841,6 @@ export default function AdminCandidates() {
                       ))}
                     </SelectContent>
                  </Select>
-                 {errors.recruiterId && <span className="text-xs text-red-500">{errors.recruiterId}</span>}
                </div>
 
                <div className="space-y-2">
@@ -794,38 +858,31 @@ export default function AdminCandidates() {
                  </Select>
                </div>
                
-               {/* Exp & CTC */}
                <div className="space-y-2">
                   <Label>Total Exp (Yrs)</Label>
-                  <Input value={formData.totalExperience} onChange={e => handleInputChange('totalExperience', e.target.value)} placeholder="e.g. 5 or 5.5" />
+                  <Input value={formData.totalExperience} onChange={e => handleInputChange('totalExperience', e.target.value)} />
                </div>
                <div className="space-y-2">
                   <Label>Current CTC</Label>
-                  <Input value={formData.ctc} onChange={e => handleInputChange('ctc', e.target.value)} placeholder="Numbers only" />
+                  <Input value={formData.ctc} onChange={e => handleInputChange('ctc', e.target.value)} />
                </div>
                <div className="space-y-2">
                   <Label>Expected CTC</Label>
-                  <Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)} placeholder="Numbers only" />
+                  <Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)} />
                </div>
 
-               {/* New Conditional Fields */}
                <div className="space-y-2">
                   <Label>Serving Notice Period?</Label>
                   <Select value={formData.servingNoticePeriod} onValueChange={(val) => handleInputChange('servingNoticePeriod', val)}>
                      <SelectTrigger><SelectValue/></SelectTrigger>
-                     <SelectContent>
-                        <SelectItem value="false">No</SelectItem>
-                        <SelectItem value="true">Yes</SelectItem>
-                     </SelectContent>
+                     <SelectContent><SelectItem value="false">No</SelectItem><SelectItem value="true">Yes</SelectItem></SelectContent>
                   </Select>
                </div>
 
-               {/* Show Days only if Yes */}
                {formData.servingNoticePeriod === 'true' && (
-                 <div className="space-y-2 animate-in fade-in zoom-in-95 duration-200">
-                    <Label className={errors.noticePeriodDays ? "text-red-500" : ""}>Notice Period (Days)</Label>
-                    <Input value={formData.noticePeriodDays} onChange={e => handleInputChange('noticePeriodDays', e.target.value)} placeholder="e.g. 60 or 45" />
-                    {errors.noticePeriodDays && <span className="text-xs text-red-500">{errors.noticePeriodDays}</span>}
+                 <div className="space-y-2">
+                    <Label>Notice Period (Days)</Label>
+                    <Input value={formData.noticePeriodDays} onChange={e => handleInputChange('noticePeriodDays', e.target.value)} />
                  </div>
                )}
 
@@ -833,19 +890,14 @@ export default function AdminCandidates() {
                   <Label>Offers in Hand?</Label>
                   <Select value={formData.offersInHand} onValueChange={(val) => handleInputChange('offersInHand', val)}>
                      <SelectTrigger><SelectValue/></SelectTrigger>
-                     <SelectContent>
-                        <SelectItem value="false">No</SelectItem>
-                        <SelectItem value="true">Yes</SelectItem>
-                     </SelectContent>
+                     <SelectContent><SelectItem value="false">No</SelectItem><SelectItem value="true">Yes</SelectItem></SelectContent>
                   </Select>
                </div>
 
-                {/* Show Package only if Yes */}
                {formData.offersInHand === 'true' && (
-                 <div className="space-y-2 animate-in fade-in zoom-in-95 duration-200">
-                    <Label className={errors.offerPackage ? "text-red-500" : ""}>Package Amount</Label>
-                    <Input value={formData.offerPackage} onChange={e => handleInputChange('offerPackage', e.target.value)} placeholder="e.g. 15 LPA" />
-                    {errors.offerPackage && <span className="text-xs text-red-500">{errors.offerPackage}</span>}
+                 <div className="space-y-2">
+                    <Label>Package Amount</Label>
+                    <Input value={formData.offerPackage} onChange={e => handleInputChange('offerPackage', e.target.value)} />
                  </div>
                )}
 
@@ -863,6 +915,39 @@ export default function AdminCandidates() {
             </DialogFooter>
          </DialogContent>
       </Dialog>
+
+      {/* Bulk Assign Dialog */}
+      <Dialog open={isBulkAssignDialogOpen} onOpenChange={setIsBulkAssignDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Recruiter</DialogTitle>
+            <DialogDescription>
+              Assign the {selectedIds.length} selected candidates to a specific recruiter.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+             <div className="space-y-2">
+               <Label>Select Recruiter</Label>
+               <Select value={bulkRecruiterId} onValueChange={setBulkRecruiterId}>
+                  <SelectTrigger><SelectValue placeholder="Choose a recruiter"/></SelectTrigger>
+                  <SelectContent>
+                    {recruiters.map(r => (
+                      // @ts-ignore
+                      <SelectItem key={r.id || r._id} value={r.id || r._id}>{r.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+               </Select>
+             </div>
+          </div>
+          <DialogFooter>
+             <Button variant="outline" onClick={() => setIsBulkAssignDialogOpen(false)}>Cancel</Button>
+             <Button onClick={handleBulkAssign} disabled={isSubmitting || !bulkRecruiterId}>
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : 'Assign'}
+             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

@@ -21,7 +21,8 @@ import {
   Plus, Search, Edit, Download, Phone, Mail,
   Building, Briefcase, Loader2, Ban, List, LayoutGrid,
   Calendar, GraduationCap, Award, UserCircle, Star, Target, 
-  MessageSquare, Linkedin, MessageCircle, Eye, IndianRupee, Upload, FileUp, FileText
+  MessageSquare, Linkedin, MessageCircle, Eye, IndianRupee, Upload, FileUp, FileText,
+  Trash2, AlertTriangle // Added Trash2 and AlertTriangle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Candidate, Job } from '@/types'; 
@@ -111,6 +112,10 @@ export default function RecruiterCandidates() {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Delete State
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -294,7 +299,7 @@ export default function RecruiterCandidates() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // --- 1. UPDATED: Stats Calculation Logic ---
+  // --- Stats Calculation Logic ---
   const stats = useMemo(() => {
     return {
       total: candidates.length,
@@ -310,7 +315,7 @@ export default function RecruiterCandidates() {
     };
   }, [candidates]);
 
-  // --- 2. UPDATED: Filter Logic ---
+  // --- Filter Logic ---
   const getFilteredCandidates = useMemo(() => {
     return candidates.filter(c => {
       const searchMatch = 
@@ -366,8 +371,10 @@ export default function RecruiterCandidates() {
   const getCandidateId = (c: BackendCandidate) => c.candidateId || c._id.substring(c._id.length - 6).toUpperCase();
   const formatSkills = (skills: string | string[] | undefined) => !skills ? 'N/A' : Array.isArray(skills) ? skills.slice(0, 3).join(', ') + (skills.length > 3 ? '...' : '') : skills.length > 50 ? skills.substring(0, 50) + '...' : skills;
   const formatDate = (dateString?: string) => dateString ? new Date(dateString).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A';
+  
   const toggleSelectCandidate = (id: string) => setSelectedCandidates(prev => prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]);
   const selectAllCandidates = () => setSelectedCandidates(selectedCandidates.length === getFilteredCandidates.length ? [] : getFilteredCandidates.map(c => c._id));
+  
   const getAssignedJobTitle = (jobId?: string) => {
     if(!jobId) return 'Not Assigned';
     const job = jobs.find(j => j._id === jobId);
@@ -458,6 +465,33 @@ export default function RecruiterCandidates() {
     } catch (error) { toast({ variant: "destructive", title: "Error" }); }
   };
 
+  // --- Bulk Delete Handler ---
+  const handleBulkDelete = async () => {
+    if (selectedCandidates.length === 0) return;
+    
+    setIsDeleting(true);
+    try {
+      const headers = { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` };
+      
+      // Execute all deletes concurrently
+      const deletePromises = selectedCandidates.map(id => 
+        fetch(`${API_URL}/candidates/${id}`, { method: 'DELETE', headers })
+      );
+
+      await Promise.all(deletePromises);
+
+      toast({ title: "Deleted", description: `${selectedCandidates.length} candidate(s) deleted successfully` });
+      setSelectedCandidates([]);
+      fetchData();
+      setIsDeleteConfirmOpen(false);
+    } catch (error) {
+      console.error("Delete error", error);
+      toast({ variant: "destructive", title: "Error", description: "Failed to delete one or more candidates" });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleWhatsApp = (c: BackendCandidate) => {
     if (!c.contact) return;
     let phone = c.contact.replace(/\D/g, ''); 
@@ -477,6 +511,17 @@ export default function RecruiterCandidates() {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div><h1 className="text-3xl font-bold">My Candidates</h1><p className="text-slate-500">Manage pipeline</p></div>
             <div className="flex gap-3">
+              {/* Delete Button */}
+              {selectedCandidates.length > 0 && (
+                <Button 
+                  variant="destructive" 
+                  onClick={() => setIsDeleteConfirmOpen(true)}
+                  className="animate-in fade-in zoom-in-95"
+                >
+                  <Trash2 className="mr-2 h-4 w-4"/> Delete ({selectedCandidates.length})
+                </Button>
+              )}
+              
               <Button variant="outline" onClick={handleExport}><Download className="mr-2 h-4 w-4"/> Export</Button>
               <Button className="bg-blue-600" onClick={() => { setFormData(initialFormState); setErrors({}); setIsAddDialogOpen(true); setIsCustomSource(false); }}>
                 <Plus className="mr-2 h-4 w-4"/> Add Candidate
@@ -484,7 +529,7 @@ export default function RecruiterCandidates() {
             </div>
           </div>
 
-          {/* --- 3. UPDATED: Stats Grid with Correct Data Mapping --- */}
+          {/* Stats Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
             <StatCard 
               title="Total Submitted" 
@@ -582,14 +627,14 @@ export default function RecruiterCandidates() {
             </div>
           </Card>
 
-          {/* ... [Table/Grid Views] ... */}
+          {/* Table/Grid Views */}
           {viewMode === 'table' ? (
             <Card className="overflow-hidden border-slate-200 dark:border-slate-800 shadow-sm">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left border-collapse">
                   <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-semibold border-b">
                     <tr>
-                      <th className="p-4 w-12"><input type="checkbox" onChange={selectAllCandidates} className="h-4 w-4 rounded border-slate-300"/></th>
+                      <th className="p-4 w-12"><input type="checkbox" checked={getFilteredCandidates.length > 0 && selectedCandidates.length === getFilteredCandidates.length} onChange={selectAllCandidates} className="h-4 w-4 rounded border-slate-300"/></th>
                       <th className="p-3">S.No</th>
                       <th className="p-3">ID</th>
                       <th className="p-3">Name</th>
@@ -670,13 +715,32 @@ export default function RecruiterCandidates() {
         </div>
       </main>
 
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent>
+           <DialogHeader>
+             <DialogTitle className="flex items-center gap-2 text-red-600">
+                <AlertTriangle className="h-5 w-5"/> Confirm Deletion
+             </DialogTitle>
+             <DialogDescription>
+               Are you sure you want to delete <strong>{selectedCandidates.length}</strong> selected candidate(s)? This action cannot be undone.
+             </DialogDescription>
+           </DialogHeader>
+           <DialogFooter>
+             <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)} disabled={isDeleting}>Cancel</Button>
+             <Button variant="destructive" onClick={handleBulkDelete} disabled={isDeleting}>
+               {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} Delete
+             </Button>
+           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Add/Edit Candidate Dialog */}
       <Dialog open={isAddDialogOpen || isEditDialogOpen} onOpenChange={(open) => { if(!open) { setIsAddDialogOpen(false); setIsEditDialogOpen(false); } }}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
                 <DialogTitle>{isEditDialogOpen ? 'Edit Candidate' : 'Add New Candidate'}</DialogTitle>
             </DialogHeader>
-            {/* ... [Resume Upload Section same as before] ... */}
             {!isEditDialogOpen && (
               <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-6 bg-slate-50 dark:bg-slate-900/50 mb-4">
                 <div className="flex flex-col items-center gap-3">
@@ -758,7 +822,6 @@ export default function RecruiterCandidates() {
                 {errors.skills && <span className="text-xs text-red-500">{errors.skills}</span>}
               </div>
 
-              {/* ... [Education, Experience, Pay sections same as before] ... */}
               <div className="md:col-span-3 font-semibold text-slate-500 border-b pb-1 mt-4 flex items-center gap-2"><GraduationCap className="h-4 w-4"/> Education</div>
               <div className="md:col-span-3 space-y-1"><Label>Qualification</Label><Input value={formData.education} onChange={e => handleInputChange('education', e.target.value)} placeholder="e.g. B.Tech from IIT Delhi"/></div>
 
@@ -818,7 +881,6 @@ export default function RecruiterCandidates() {
                 </Select>
               </div>
 
-              {/* --- 4. UPDATED: Status Dropdown in Form --- */}
               <div className="space-y-2">
                 <Label>Status</Label>
                 <Select value={formData.status} onValueChange={v => handleInputChange('status', v)}>
@@ -844,11 +906,10 @@ export default function RecruiterCandidates() {
         </DialogContent>
       </Dialog>
       
-      {/* View Dialog Logic remains same... */}
+      {/* View Dialog */}
       {viewingCandidate && (
         <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-             {/* ... [Same content as original View Dialog] ... */}
             <DialogHeader>
               <DialogTitle className="text-2xl flex items-center gap-3">
                 <Avatar className="h-10 w-10"><AvatarFallback className="bg-blue-600 text-white">{getInitials(viewingCandidate.name)}</AvatarFallback></Avatar>
