@@ -22,18 +22,21 @@ import {
   Plus, Search, Edit, Download, Phone, Mail,
   Building, Briefcase, Loader2, Ban, List, LayoutGrid,
   Calendar, GraduationCap, Award, UserCircle, Star, Target, 
-  MessageSquare, Linkedin, MessageCircle, Eye, IndianRupee, Upload, FileUp, FileText,
-  Trash2, AlertTriangle
+  MessageSquare, Linkedin, MessageCircle, Eye, IndianRupee, Upload, FileUp, FileText, X, CheckSquare,
+  Trash2, AlertTriangle // Added missing imports
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { Candidate, Job } from '@/types'; 
+// import { Candidate, Job } from '@/types'; // Assuming types exist, or using local interfaces below
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // --- Interfaces ---
-interface BackendCandidate extends Candidate {
+interface BackendCandidate {
   _id: string;
   candidateId?: string;
+  name: string;
+  email: string;
+  contact: string;
   dateOfBirth?: string;
   gender?: string;
   linkedin?: string;
@@ -44,10 +47,12 @@ interface BackendCandidate extends Candidate {
   noticePeriod?: string;
   education?: string;
   source?: string;
+  status?: string[] | string; 
   rating?: number;
-  assignedJobId?: string;
+  assignedJobId?: string | { _id: string, name: string, position?: string, clientName?: string }; // Adjusted for populated fields
   active?: boolean;
   dateAdded?: string;
+  createdAt?: string;
   remarks?: string;
   notes?: string;
   rejectionReason?: string;
@@ -57,9 +62,17 @@ interface BackendCandidate extends Candidate {
   offerPackage?: string;
   servingNoticePeriod?: boolean;
   noticePeriodDays?: string;
+  ctc?: string;
+  ectc?: string;
+  takeHomeSalary?: string;
+  skills?: string[] | string;
+  position?: string;
+  client?: string;
+  relevantExperience?: string | number;
+  totalExperience?: string | number;
 }
 
-interface BackendJob extends Job {
+interface BackendJob {
   _id: string;
   deadline?: string;
   position: string;
@@ -78,12 +91,17 @@ interface CandidateFormData {
   totalExperience: string; relevantExperience: string;
   education: string;
   ctc: string; ectc: string; 
+  takeHomeSalary: string;
+  currentTakeHome?: string; // Added to interface
+  expectedTakeHome?: string; // Added to interface
   noticePeriod: string;
   servingNoticePeriod: string;
   noticePeriodDays: string;
   offersInHand: string;
   offerPackage: string;
-  source: string; status: string; rating: string; assignedJobId: string; dateAdded: string;
+  source: string; 
+  status: string[];
+  rating: string; assignedJobId: string; dateAdded: string;
   notes: string; remarks: string;
   active: boolean;
 }
@@ -133,7 +151,6 @@ export default function RecruiterCandidates() {
 
   const standardSources = ['Portal', 'LinkedIn', 'Referral', 'Direct', 'Agency'];
   
-  // --- UPDATED STATUS LIST ---
   const allStatuses = [
     'Shared Profiles',
     'Yet to attend',
@@ -142,35 +159,10 @@ export default function RecruiterCandidates() {
     'Selected',
     'Joined',
     'Rejected',
+    'Pipeline',
     'Hold',
     'Backout'
   ];
-
-  // Interview Levels and Outcomes for Cascading Dropdown
-  const interviewLevels = ['L1', 'L2', 'L3', 'L4', 'L5'];
-  const interviewOutcomes = ['SELECT', 'REJECT', 'HOLD', 'JOINED'];
-
-  // Helper to extract canonical outcome from status string (handles `L1 - SELECT` etc.)
-  const outcomeOfStatus = (status?: string | null) => {
-    if (!status) return '';
-    const s = status.toString().trim();
-    // Match patterns like L1 - SELECT, L2-REJECT, etc.
-    const m = s.match(/^L\s*([1-5])\s*-\s*(SELECT|REJECT|HOLD|JOIN|JOINED)$/i);
-    if (m) {
-      const out = m[2].toUpperCase();
-      if (out === 'SELECT') return 'Selected';
-      if (out === 'REJECT') return 'Rejected';
-      if (out === 'HOLD') return 'Hold';
-      if (out === 'JOIN' || out === 'JOINED') return 'Joined';
-    }
-    // Fallback mappings for plain statuses
-    const plain = s.toLowerCase();
-    if (plain === 'selected') return 'Selected';
-    if (plain === 'rejected') return 'Rejected';
-    if (plain === 'hold') return 'Hold';
-    if (plain === 'joined' || plain === 'join') return 'Joined';
-    return s;
-  };
 
   const [isCustomSource, setIsCustomSource] = useState(false);
 
@@ -181,12 +173,17 @@ export default function RecruiterCandidates() {
     totalExperience: '', relevantExperience: '',
     education: '',
     ctc: '', ectc: '', 
+    takeHomeSalary: '',
+    currentTakeHome: '',
+    expectedTakeHome: '',
     noticePeriod: '',
     servingNoticePeriod: 'false',
     noticePeriodDays: '',
     offersInHand: 'false',
     offerPackage: '',
-    source: 'Portal', status: 'Submitted', rating: '0', assignedJobId: '',
+    source: 'Portal', 
+    status: ['Submitted'], 
+    rating: '0', assignedJobId: '',
     dateAdded: new Date().toISOString().split('T')[0],
     notes: '', remarks: '',
     active: true
@@ -278,7 +275,13 @@ export default function RecruiterCandidates() {
 
         myCandidates.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-        setCandidates(myCandidates);
+        // Ensure status is treated as array even if legacy data is string
+        const fixedCandidates = myCandidates.map((c: any) => ({
+            ...c,
+            status: Array.isArray(c.status) ? c.status : [c.status || 'Submitted']
+        }));
+
+        setCandidates(fixedCandidates);
         setJobs(allJobs);
         setClients(allClients);
       }
@@ -314,11 +317,29 @@ export default function RecruiterCandidates() {
       newValue = value.replace(/\D/g, ''); 
       if (newValue.length > 10) return; 
     }
-    if (['totalExperience', 'relevantExperience', 'ctc', 'ectc'].includes(key)) {
+    if (['totalExperience', 'relevantExperience', 'ctc', 'ectc', 'takeHomeSalary', 'currentTakeHome', 'expectedTakeHome'].includes(key)) {
        if (!/^\d*\.?\d*$/.test(value)) return;
     }
     setFormData(prev => ({ ...prev, [key]: newValue }));
     if (errors[key]) setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
+  };
+
+  // --- UPDATED Status Handlers with "Select All" Logic ---
+  const addStatus = (newStatus: string) => {
+    if (newStatus === 'SELECT_ALL') {
+      setFormData(prev => ({ ...prev, status: [...allStatuses] }));
+    } else {
+      if (!formData.status.includes(newStatus)) {
+        setFormData(prev => ({ ...prev, status: [...prev.status, newStatus] }));
+      }
+    }
+  };
+
+  const removeStatus = (statusToRemove: string) => {
+    setFormData(prev => ({ 
+      ...prev, 
+      status: prev.status.filter(s => s !== statusToRemove) 
+    }));
   };
 
   const validateForm = () => {
@@ -340,6 +361,8 @@ export default function RecruiterCandidates() {
 
     if (data.servingNoticePeriod === 'true' && !data.noticePeriodDays.trim()) newErrors.noticePeriodDays = "Please specify days";
     if (data.offersInHand === 'true' && !data.offerPackage.trim()) newErrors.offerPackage = "Please specify package amount";
+    
+    if (data.status.length === 0) newErrors.status = "At least one status is required";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -347,17 +370,22 @@ export default function RecruiterCandidates() {
 
   // --- Stats Calculation Logic ---
   const stats = useMemo(() => {
+    const countStatus = (s: string) => candidates.filter(c => 
+        Array.isArray(c.status) ? c.status.includes(s) : c.status === s
+    ).length;
+
     return {
       total: candidates.length,
-      turnups: candidates.filter(c => outcomeOfStatus(c.status) === 'Turnups' || c.status === 'Turnups').length,
-      noShow: candidates.filter(c => c.status === 'No Show').length,
-      yetToAttend: candidates.filter(c => c.status === 'Yet to attend').length,
-      selected: candidates.filter(c => outcomeOfStatus(c.status) === 'Selected').length,
-      rejected: candidates.filter(c => outcomeOfStatus(c.status) === 'Rejected').length,
-      hold: candidates.filter(c => outcomeOfStatus(c.status) === 'Hold').length,
-      joined: candidates.filter(c => outcomeOfStatus(c.status) === 'Joined').length,
-      backout: candidates.filter(c => c.status === 'Backout').length,
-      sharedProfiles: candidates.filter(c => c.status === 'Shared Profiles').length,
+      turnups: countStatus('Turnups'),
+      noShow: countStatus('No Show'),
+      yetToAttend: countStatus('Yet to attend'),
+      selected: countStatus('Selected'),
+      rejected: countStatus('Rejected'),
+      hold: countStatus('Hold'),
+      joined: countStatus('Joined'),
+      pipeline: countStatus('Pipeline'),
+      backout: countStatus('Backout'),
+      sharedProfiles: countStatus('Shared Profiles'),
     };
   }, [candidates]);
 
@@ -370,19 +398,15 @@ export default function RecruiterCandidates() {
         c.candidateId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (Array.isArray(c.skills) && c.skills.some(skill => skill.toLowerCase().includes(searchTerm.toLowerCase())));
 
-      // If a stat card is clicked, use that filter exclusively
+      const currentStatusArr = Array.isArray(c.status) ? c.status : [c.status || ''];
+      
+      let statCardMatch = true;
       if (activeStatFilter) {
-        // If stat filter is one of canonical outcomes, match using outcomeOfStatus
-        const canonical = ['Selected', 'Rejected', 'Hold', 'Joined'];
-        if (canonical.includes(activeStatFilter)) {
-          return searchMatch && outcomeOfStatus(c.status) === activeStatFilter;
-        }
-        return searchMatch && c.status === activeStatFilter;
+        statCardMatch = currentStatusArr.includes(activeStatFilter);
       }
 
-      // Otherwise use the dropdown status filter
-      const statusDropdownMatch = statusFilter === 'all' || c.status === statusFilter;
-      return searchMatch && statusDropdownMatch;
+      const statusDropdownMatch = statusFilter === 'all' || currentStatusArr.includes(statusFilter);
+      return searchMatch && statusDropdownMatch && statCardMatch;
     });
   }, [candidates, searchTerm, statusFilter, activeStatFilter]);
 
@@ -392,12 +416,12 @@ export default function RecruiterCandidates() {
       toast({ title: "No data to export", variant: "destructive" });
       return;
     }
-    const headers = ["Candidate ID", "Name", "Email", "Phone", "Client", "Position", "Status", "Total Exp", "Current CTC", "Expected CTC", "Skills", "Date Added"];
-    const escapeCsv = (str: string | undefined | null) => str ? `"${String(str).replace(/"/g, '""')}"` : '""';
+    const headers = ["Candidate ID", "Name", "Email", "Phone", "Client", "Position", "Status", "Total Exp", "Current CTC", "Expected CTC", "Take Home", "Skills", "Date Added"];
+    const escapeCsv = (str: string | undefined | number | null) => str ? `"${String(str).replace(/"/g, '""')}"` : '""';
     const rows = getFilteredCandidates.map(c => [
       escapeCsv(getCandidateId(c)), escapeCsv(c.name), escapeCsv(c.email), escapeCsv(c.contact),
-      escapeCsv(c.client), escapeCsv(c.position), escapeCsv(c.status), escapeCsv(c.totalExperience),
-      escapeCsv(c.ctc), escapeCsv(c.ectc), escapeCsv(Array.isArray(c.skills) ? c.skills.join(', ') : c.skills),
+      escapeCsv(c.client), escapeCsv(c.position), escapeCsv(Array.isArray(c.status) ? c.status.join(' | ') : c.status), escapeCsv(c.totalExperience),
+      escapeCsv(c.ctc), escapeCsv(c.ectc), escapeCsv(c.takeHomeSalary), escapeCsv(Array.isArray(c.skills) ? c.skills.join(', ') : c.skills),
       escapeCsv(new Date(c.dateAdded || c.createdAt || new Date()).toLocaleDateString())
     ]);
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -408,22 +432,11 @@ export default function RecruiterCandidates() {
     link.click();
   };
 
-  const getStatusBadgeClass = (status: string | undefined) => {
-    const outcome = outcomeOfStatus(status);
-    switch (outcome) {
-      case 'Joined':
-        return 'bg-green-100 text-green-800 border border-green-200';
-      case 'Rejected':
-        // thick red for rejected
-        return 'bg-red-700 text-white border border-red-800';
-      case 'Hold':
-        // light red for hold
-        return 'bg-red-100 text-red-800 border border-red-200';
-      case 'Selected':
-        return 'bg-blue-100 text-blue-800 border border-blue-200';
-      default:
-        return 'bg-slate-100 text-slate-700 border border-slate-200';
-    }
+  const getStatusBadgeVariant = (status: string | undefined) => {
+    if (status === 'Joined' || status === 'Selected') return 'default'; 
+    if (status === 'Rejected' || status === 'Backout' || status === 'No Show') return 'destructive';
+    if (status === 'Hold' || status === 'Yet to attend' || status === 'Turnups') return 'secondary';
+    return 'outline';
   };
 
   const getInitials = (n: string) => n.split(' ').map(i => i[0]).join('').toUpperCase().substring(0,2);
@@ -434,120 +447,11 @@ export default function RecruiterCandidates() {
   const toggleSelectCandidate = (id: string) => setSelectedCandidates(prev => prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]);
   const selectAllCandidates = () => setSelectedCandidates(selectedCandidates.length === getFilteredCandidates.length ? [] : getFilteredCandidates.map(c => c._id));
   
-  const getAssignedJobTitle = (jobId?: string) => {
+  const getAssignedJobTitle = (jobId?: string | { _id: string, name: string, position?: string, clientName?: string }) => {
     if(!jobId) return 'Not Assigned';
+    if(typeof jobId === 'object') return `${jobId.position} (${jobId.clientName})`;
     const job = jobs.find(j => j._id === jobId);
     return job ? `${job.position} (${job.clientName})` : jobId;
-  };
-
-  // --- Status Update Handler ---
-  const handleStatusLevelSelect = (level: string) => {
-    setSelectedLevel(level);
-    setSelectedOutcome(''); // Reset outcome when level changes
-  };
-
-  const handleStatusOutcomeSelect = async (outcome: string) => {
-    try {
-      // Map outcome to canonical status labels used across filters/stats
-      const mapOutcomeToStatus = (o: string) => {
-        const up = o.toUpperCase();
-        if (up === 'SELECT') return 'Selected';
-        if (up === 'REJECT') return 'Rejected';
-        if (up === 'HOLD') return 'Hold';
-        if (up === 'JOIN' || up === 'JOINED') return 'Joined';
-        return o;
-      };
-
-      const mappedOutcome = mapOutcomeToStatus(outcome);
-      // If a level was selected, save as `Lx - OUTCOME`, otherwise save canonical outcome
-      const newStatus = selectedLevel ? `${selectedLevel} - ${outcome}` : mappedOutcome;
-      setSelectedOutcome(outcome);
-      setTempStatus(newStatus);
-
-      // Find the candidate being edited
-      const candidateToUpdate = candidates.find(c => c._id === statusEditingId);
-      if (!candidateToUpdate) return;
-
-      // Make API call to update status
-      const headers = { 
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-        'Content-Type': 'application/json'
-      };
-
-      const response = await fetch(`${API_URL}/candidates/${statusEditingId}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ status: newStatus })
-      });
-
-      if (response.ok) {
-        toast({ title: "Status Updated", description: `Updated to: ${newStatus}`, duration: 2000 });
-        fetchData(); // Refresh candidate list
-      } else {
-        throw new Error('Failed to update status');
-      }
-    } catch (error) {
-      console.error('Status update error:', error);
-      toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
-    } finally {
-      setStatusEditingId(null);
-      setSelectedLevel('');
-      setTempStatus('');
-    }
-  };
-
-  const openStatusEditor = (candidateId: string, currentStatus: string) => {
-    setStatusEditingId(candidateId);
-    // If current status is like 'L1 - SELECT', prefill level and outcome
-    const match = (currentStatus || '').toString().match(/^L\s*([1-5])\s*-\s*(SELECT|REJECT|HOLD|JOIN|JOINED)$/i);
-    if (match) {
-      setSelectedLevel(`L${match[1]}`);
-      setSelectedOutcome(match[2].toUpperCase());
-    } else {
-      setSelectedLevel('');
-      setSelectedOutcome('');
-    }
-    setTempStatus(currentStatus);
-  };
-
-  // --- Remarks Update Handler ---
-  const openRemarksEditor = (candidateId: string, currentRemarks: string) => {
-    setRemarksEditingId(candidateId);
-    setEditingRemarks(currentRemarks || '');
-  };
-
-  const saveRemarks = async (candidateId: string) => {
-    try {
-      // Make API call to update remarks
-      const headers = { 
-        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
-        'Content-Type': 'application/json'
-      };
-
-      const response = await fetch(`${API_URL}/candidates/${candidateId}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ remarks: editingRemarks })
-      });
-
-      if (response.ok) {
-        toast({ title: "Remarks Updated", description: editingRemarks || "Remarks cleared", duration: 2000 });
-        fetchData(); // Refresh candidate list
-      } else {
-        throw new Error('Failed to update remarks');
-      }
-    } catch (error) {
-      console.error('Remarks update error:', error);
-      toast({ title: "Error", description: "Failed to update remarks", variant: "destructive" });
-    } finally {
-      setRemarksEditingId(null);
-      setEditingRemarks('');
-    }
-  };
-
-  const cancelRemarksEdit = () => {
-    setRemarksEditingId(null);
-    setEditingRemarks('');
   };
 
   // --- Dialog Handlers ---
@@ -574,12 +478,17 @@ export default function RecruiterCandidates() {
       education: c.education || '', 
       ctc: c.ctc ? String(c.ctc) : '', 
       ectc: c.ectc ? String(c.ectc) : '', 
+      takeHomeSalary: c.takeHomeSalary ? String(c.takeHomeSalary) : '',
+      currentTakeHome: '', // Backend might not have this, default empty
+      expectedTakeHome: '',
       noticePeriod: c.noticePeriod ? String(c.noticePeriod) : '',
       servingNoticePeriod: c.servingNoticePeriod ? 'true' : 'false',
       noticePeriodDays: c.noticePeriodDays || '',
       offersInHand: c.offersInHand ? 'true' : 'false',
       offerPackage: c.offerPackage || '',
-      source: c.source || 'Portal', status: c.status || 'Submitted', rating: c.rating?.toString() || '0',
+      source: c.source || 'Portal', 
+      status: Array.isArray(c.status) ? c.status : [c.status || 'Submitted'], 
+      rating: c.rating?.toString() || '0',
       assignedJobId: typeof c.assignedJobId === 'object' ? (c.assignedJobId as any)._id : c.assignedJobId || '',
       dateAdded: c.dateAdded ? new Date(c.dateAdded).toISOString().split('T')[0] : '',
       notes: c.notes || '', remarks: c.remarks || '', active: c.active !== false
@@ -600,7 +509,7 @@ export default function RecruiterCandidates() {
       
       const payload = {
         ...formData,
-        assignedJobId: typeof formData.assignedJobId === 'object' ? formData.assignedJobId._id : formData.assignedJobId,
+        assignedJobId: typeof formData.assignedJobId === 'object' ? (formData.assignedJobId as any)._id : formData.assignedJobId,
         recruiterId: user?.id,
         recruiterName: user?.name,
         skills: formData.skills.split(',').map((s: string) => s.trim()),
@@ -698,10 +607,10 @@ export default function RecruiterCandidates() {
             </div>
           </div>
 
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* --- Stats Grid --- */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <StatCard 
-              title="Total Submitted" 
+              title="Overall Submissions" 
               value={stats.total} 
               color="blue" 
               active={activeStatFilter === null} 
@@ -710,14 +619,14 @@ export default function RecruiterCandidates() {
             <StatCard 
               title="Turnups" 
               value={stats.turnups} 
-              color="black" 
+              color="cyan" 
               active={activeStatFilter === 'Turnups'} 
               onClick={() => { setActiveStatFilter('Turnups'); setStatusFilter('all'); }} 
             />
             <StatCard 
               title="No Show" 
               value={stats.noShow} 
-              color="red" 
+              color="indigo" 
               active={activeStatFilter === 'No Show'} 
               onClick={() => { setActiveStatFilter('No Show'); setStatusFilter('all'); }} 
             />
@@ -745,16 +654,23 @@ export default function RecruiterCandidates() {
             <StatCard 
               title="Hold" 
               value={stats.hold} 
-              color="orange" 
+              color="amber" 
               active={activeStatFilter === 'Hold'} 
               onClick={() => { setActiveStatFilter('Hold'); setStatusFilter('all'); }} 
             />
             <StatCard 
+              title="Pipeline" 
+              value={stats.pipeline} 
+              color="orange" 
+              active={activeStatFilter === 'Pipeline'} 
+              onClick={() => setActiveStatFilter('Pipeline')} 
+            />
+            <StatCard 
               title="Joined" 
               value={stats.joined} 
-              color="green" 
+              color="emerald" 
               active={activeStatFilter === 'Joined'} 
-              onClick={() => { setActiveStatFilter('Joined'); setStatusFilter('all'); }} 
+              onClick={() => setActiveStatFilter('Joined')} 
             />
             <StatCard 
               title="Backout" 
@@ -771,7 +687,6 @@ export default function RecruiterCandidates() {
               onClick={() => { setActiveStatFilter('Shared Profiles'); setStatusFilter('all'); }} 
             />
           </div>
-
 
           <Card className="p-4 border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
@@ -837,117 +752,13 @@ export default function RecruiterCandidates() {
                         <td className="p-3 text-xs"><div>{c.ctc || '-'}</div><div className="text-green-600">{c.ectc || '-'}</div></td>
                         <td className="p-3 text-sm"><Badge variant="outline">{c.noticePeriod || '-'}</Badge></td>
                         <td className="p-3">
-                          {statusEditingId === c._id ? (
-                            <div className="flex flex-col gap-2 w-full min-w-[200px]">
-                              {/* Level Dropdown */}
-                              <Select value={selectedLevel} onValueChange={handleStatusLevelSelect}>
-                                <SelectTrigger className="h-8 text-xs">
-                                  <SelectValue placeholder="Select Level" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {interviewLevels.map(level => (
-                                    <SelectItem key={level} value={level}>{level}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-
-                              {/* Outcome Buttons - Appear Directly When Level is Selected */}
-                              {selectedLevel && (
-                                <div className="flex gap-1 animate-in fade-in zoom-in-95">
-                                  {interviewOutcomes.map(outcome => (
-                                    <Button
-                                      key={outcome}
-                                      size="sm"
-                                      variant={selectedOutcome === outcome ? "default" : "outline"}
-                                      className={`flex-1 h-7 text-xs transition-all ${
-                                        selectedOutcome === outcome
-                                          ? 'bg-blue-600 text-white'
-                                          : 'hover:bg-blue-100'
-                                      }`}
-                                      onClick={() => handleStatusOutcomeSelect(outcome)}
-                                    >
-                                      {outcome}
-                                    </Button>
-                                  ))}
-                                </div>
-                              )}
-
-                              {/* Cancel Button */}
-                              <Button 
-                                size="sm" 
-                                variant="outline" 
-                                className="h-7 text-xs"
-                                onClick={() => {
-                                  setStatusEditingId(null);
-                                  setSelectedLevel('');
-                                  setSelectedOutcome('');
-                                }}
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-between group">
-                              <Badge className={`${getStatusBadgeClass(c.status)} cursor-pointer`}>
-                                {statusEditingId === null && tempStatus === '' ? c.status : tempStatus}
-                              </Badge>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity ml-2"
-                                onClick={() => openStatusEditor(c._id, c.status)}
-                              >
-                                <Edit className="h-3 w-3 text-blue-600" />
-                              </Button>
-                            </div>
-                          )}
+                          <div className="flex flex-wrap gap-1">
+                            {Array.isArray(c.status) ? c.status.map(s => (
+                              <Badge key={s} variant={getStatusBadgeVariant(s)} className="text-[10px] px-1 py-0">{s}</Badge>
+                            )) : <Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge>}
+                          </div>
                         </td>
-                        <td className="p-3">
-                          {remarksEditingId === c._id ? (
-                            <div className="flex flex-col gap-2 w-full min-w-[250px]">
-                              {/* Remarks Input Field */}
-                              <textarea
-                                value={editingRemarks}
-                                onChange={(e) => setEditingRemarks(e.target.value)}
-                                placeholder="Add remarks..."
-                                className="text-xs p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none h-16 dark:bg-slate-800 dark:border-slate-600 dark:text-white"
-                              />
-                              
-                              {/* Save and Cancel Buttons */}
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  className="flex-1 h-7 text-xs bg-green-600 hover:bg-green-700"
-                                  onClick={() => saveRemarks(c._id)}
-                                >
-                                  Save
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="flex-1 h-7 text-xs"
-                                  onClick={cancelRemarksEdit}
-                                >
-                                  Cancel
-                                </Button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex items-start justify-between group cursor-pointer">
-                              <p className="text-xs text-slate-500 truncate max-w-[100px] hover:text-slate-700 transition-colors">
-                                {editingRemarks || c.remarks || '—'}
-                              </p>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity ml-2"
-                                onClick={() => openRemarksEditor(c._id, editingRemarks || c.remarks)}
-                              >
-                                <Edit className="h-3 w-3 text-blue-600" />
-                              </Button>
-                            </div>
-                          )}
-                        </td>
+                        <td className="p-3 text-xs text-slate-500 truncate max-w-[100px]">{c.remarks}</td>
                         <td className="p-3 text-right">
                           <div className="flex justify-end gap-1">
                             <Button size="sm" variant="ghost" onClick={() => openViewDialog(c)}><Eye className="h-3.5 w-3.5"/></Button>
@@ -974,7 +785,12 @@ export default function RecruiterCandidates() {
                                         <p className="text-sm text-blue-600 font-mono">{getCandidateId(c)}</p>
                                     </div>
                                 </div>
-                                <Badge className={getStatusBadgeClass(c.status)}>{c.status}</Badge>
+                                <div className="flex flex-wrap gap-1 justify-end max-w-[50%]">
+                                  {Array.isArray(c.status) ? c.status.slice(0, 2).map(s => (
+                                    <Badge key={s} variant={getStatusBadgeVariant(s)} className="text-[10px]">{s}</Badge>
+                                  )) : <Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge>}
+                                  {Array.isArray(c.status) && c.status.length > 2 && <span className="text-xs text-slate-500">+{c.status.length - 2}</span>}
+                                </div>
                             </div>
                             <div className="space-y-2 text-sm text-slate-600">
                                 <div className="flex items-center gap-2"><Building className="h-4 w-4"/> {c.client}</div>
@@ -1125,8 +941,8 @@ export default function RecruiterCandidates() {
                 </div>
               )}
 
-              <div className="space-y-2"><Label>Current CTC</Label><Input value={formData.ctc} onChange={e => handleInputChange('ctc', e.target.value)} placeholder="Numbers only"/></div>
-              <div className="space-y-2"><Label>Expected CTC</Label><Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)} placeholder="Numbers only"/></div>
+              <div className="space-y-2"><Label>Current CTC (Lakhs)</Label><Input value={formData.ctc} onChange={e => handleInputChange('ctc', e.target.value)} placeholder="Numbers only"/></div>
+              <div className="space-y-2"><Label>Expected CTC (Lakhs)</Label><Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)} placeholder="Numbers only"/></div>
               
               <div className="space-y-2">
                   <Label>Offers in Hand?</Label>
@@ -1135,6 +951,25 @@ export default function RecruiterCandidates() {
                      <SelectContent><SelectItem value="false">No</SelectItem><SelectItem value="true">Yes</SelectItem></SelectContent>
                   </Select>
                </div>
+               
+               <div className="space-y-2">
+                 <Label> Current Take Home (Thousands)</Label>
+                 <Input 
+                   value={formData.currentTakeHome} 
+                   onChange={e => handleInputChange('currentTakeHome', e.target.value)} 
+                   placeholder="Numbers only"
+                  />
+               </div>
+               <div className="space-y-2">
+                 <Label> Expected Take Home (Thousands)</Label>
+                 <Input 
+                   value={formData.expectedTakeHome} 
+                   onChange={e => handleInputChange('expectedTakeHome', e.target.value)} 
+                   placeholder="Numbers only"
+                  />
+               </div>
+               <div className="space-y-2"><Label>Reason For Change</Label><Textarea value={formData.notes} onChange={e => handleInputChange('notes', e.target.value)} className="w-full border rounded-md p-2 h-10 text-sm"
+  placeholder="Reason for changing"/></div>
 
                {formData.offersInHand === 'true' && (
                  <div className="space-y-2 animate-in fade-in zoom-in-95">
@@ -1161,23 +996,53 @@ export default function RecruiterCandidates() {
                 </Select>
               </div>
 
+              {/* --- UPDATED: Status Multi-Select --- */}
               <div className="space-y-2">
-                <Label>Status</Label>
-                <Select value={formData.status} onValueChange={v => handleInputChange('status', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select Status"/></SelectTrigger>
+                <Label className={errors.status ? "text-red-500" : ""}>Status (Multi-select)</Label>
+                
+                {/* Box showing selected options */}
+                <div className={`border rounded-md p-2 min-h-[42px] flex flex-wrap gap-2 bg-white dark:bg-slate-900 ${errors.status ? 'border-red-500' : ''}`}>
+                  {formData.status.length > 0 ? (
+                    formData.status.map(status => (
+                      <Badge key={status} variant="secondary" className="flex items-center gap-1">
+                        {status}
+                        <X 
+                          className="h-3 w-3 cursor-pointer hover:text-red-500" 
+                          onClick={() => removeStatus(status)}
+                        />
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-sm text-slate-400 p-1">No status selected</span>
+                  )}
+                </div>
+
+                {/* Dropdown with key={} force reset trick */}
+                <Select 
+                  key={formData.status.length} // Forces component reset after selection
+                  onValueChange={addStatus}
+                >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Add a status..." />
+                    </SelectTrigger>
                     <SelectContent>
+                        {/* ✅ Added Select All Option */}
+                        <SelectItem value="SELECT_ALL" className="font-bold border-b border-slate-200 mb-1 text-blue-600">
+                           <div className="flex items-center gap-2"><CheckSquare className="h-4 w-4"/> Select All</div>
+                        </SelectItem>
                         {allStatuses.map(status => (
-                            <SelectItem key={status} value={status}>{status}</SelectItem>
+                            <SelectItem key={status} value={status} disabled={formData.status.includes(status)}>
+                              {status}
+                            </SelectItem>
                         ))}
                     </SelectContent>
                 </Select>
+                {errors.status && <span className="text-xs text-red-500">{errors.status}</span>}
               </div>
               
               <div className="space-y-2"><Label>Rating</Label><Select value={formData.rating} onValueChange={v => handleInputChange('rating', v)}><SelectTrigger><SelectValue placeholder="Rate"/></SelectTrigger><SelectContent>{[1,2,3,4,5].map(r=><SelectItem key={r} value={r.toString()}>{r} Stars</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-2"><Label>Date Added</Label><Input type="date" value={formData.dateAdded} onChange={e => handleInputChange('dateAdded', e.target.value)}/></div>
-
               <div className="md:col-span-3 space-y-2 mt-2"><Label>Remarks</Label><Textarea value={formData.remarks} onChange={e => handleInputChange('remarks', e.target.value)}/></div>
-              <div className="md:col-span-3 space-y-2"><Label>Internal Notes</Label><Textarea value={formData.notes} onChange={e => handleInputChange('notes', e.target.value)}/></div>
             </div>
             <DialogFooter>
                 <Button variant="outline" onClick={() => { setIsAddDialogOpen(false); setIsEditDialogOpen(false); }}>Cancel</Button>
@@ -1186,7 +1051,7 @@ export default function RecruiterCandidates() {
         </DialogContent>
       </Dialog>
       
-      {/* View Dialog */}
+      {/* View Dialog Logic */}
       {viewingCandidate && (
         <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -1194,7 +1059,12 @@ export default function RecruiterCandidates() {
               <DialogTitle className="text-2xl flex items-center gap-3">
                 <Avatar className="h-10 w-10"><AvatarFallback className="bg-blue-600 text-white">{getInitials(viewingCandidate.name)}</AvatarFallback></Avatar>
                 {viewingCandidate.name} 
-                <Badge className={`${getStatusBadgeClass(viewingCandidate.status)} ml-auto`}>{viewingCandidate.status}</Badge>
+                <div className="ml-auto flex flex-wrap gap-2">
+                  {Array.isArray(viewingCandidate.status) ? 
+                    viewingCandidate.status.map(s => <Badge key={s} variant={getStatusBadgeVariant(s)}>{s}</Badge>) : 
+                    <Badge variant={getStatusBadgeVariant(viewingCandidate.status)}>{viewingCandidate.status}</Badge>
+                  }
+                </div>
               </DialogTitle>
               <DialogDescription className="font-mono text-blue-600 text-sm">ID: {getCandidateId(viewingCandidate)}</DialogDescription>
             </DialogHeader>
@@ -1235,6 +1105,9 @@ export default function RecruiterCandidates() {
                       <div><Label className="text-xs text-slate-500">Current CTC</Label><div>{viewingCandidate.ctc}</div></div>
                       <div><Label className="text-xs text-slate-500">Expected CTC</Label><div>{viewingCandidate.ectc}</div></div>
                       
+                      {/* --- Added Take Home Salary View --- */}
+                      <div><Label className="text-xs text-slate-500">Take Home Salary</Label><div>{viewingCandidate.takeHomeSalary || '-'}</div></div>
+
                       {viewingCandidate.servingNoticePeriod && (
                         <div><Label className="text-xs text-slate-500">Notice Period</Label><div className="text-amber-600 font-medium">Serving ({viewingCandidate.noticePeriodDays} days left)</div></div>
                       )}
@@ -1252,17 +1125,13 @@ export default function RecruiterCandidates() {
                       <div><Label className="text-xs text-slate-500">Recruiter</Label><div>{viewingCandidate.recruiterName || 'Self'}</div></div>
                       <div><Label className="text-xs text-slate-500">Date Added</Label><div>{formatDate(viewingCandidate.dateAdded)}</div></div>
                       <div><Label className="text-xs text-slate-500">Rating</Label><div className="flex items-center gap-1">{viewingCandidate.rating} <Star className="h-3 w-3 fill-yellow-400 text-yellow-400"/></div></div>
-                      {viewingCandidate.status === 'Rejected' && <div className="col-span-2 text-red-600"><Label className="text-xs text-red-400">Rejection Reason</Label><div>{viewingCandidate.rejectionReason}</div></div>}
+                      {Array.isArray(viewingCandidate.status) && viewingCandidate.status.includes('Rejected') && <div className="col-span-2 text-red-600"><Label className="text-xs text-red-400">Rejection Reason</Label><div>{viewingCandidate.rejectionReason}</div></div>}
                    </div>
                 </div>
                 <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100">
-                        <Label className="text-xs font-semibold text-yellow-700 flex items-center gap-2 mb-2"><FileText className="h-3 w-3"/> Internal Notes</Label>
+                        <Label className="text-xs font-semibold text-yellow-700 flex items-center gap-2 mb-2"><FileText className="h-3 w-3"/>Remarks</Label>
                         <p className="text-sm text-yellow-900 whitespace-pre-wrap">{viewingCandidate.notes || 'No internal notes.'}</p>
-                    </div>
-                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                        <Label className="text-xs font-semibold text-blue-700 flex items-center gap-2 mb-2"><MessageSquare className="h-3 w-3"/> Remarks</Label>
-                        <p className="text-sm text-blue-900 whitespace-pre-wrap">{viewingCandidate.remarks || 'No remarks.'}</p>
                     </div>
                 </div>
             </div>
@@ -1278,96 +1147,46 @@ export default function RecruiterCandidates() {
 }
 
 const StatCard = ({ title, value, color, active, onClick }: any) => {
-  const colorConfig: Record<string, { border: string; bg: string; activeBg: string; text: string; ring: string }> = {
-    blue: {
-      border: 'border-l-blue-500',
-      bg: 'bg-blue-50/40',
-      activeBg: 'from-blue-500/10 to-blue-400/5',
-      text: 'text-blue-700',
-      ring: 'ring-blue-300/50',
-    },
-    black: {
-      border: 'border-l-slate-900',
-      bg: 'bg-slate-50/40',
-      activeBg: 'from-slate-900/10 to-slate-700/5',
-      text: 'text-slate-900',
-      ring: 'ring-slate-400/50',
-    },
-    red: {
-      border: 'border-l-red-500',
-      bg: 'bg-red-50/40',
-      activeBg: 'from-red-500/10 to-red-400/5',
-      text: 'text-red-700',
-      ring: 'ring-red-300/50',
-    },
-    purple: {
-      border: 'border-l-purple-500',
-      bg: 'bg-purple-50/40',
-      activeBg: 'from-purple-500/10 to-purple-400/5',
-      text: 'text-purple-700',
-      ring: 'ring-purple-300/50',
-    },
-    green: {
-      border: 'border-l-green-500',
-      bg: 'bg-green-50/40',
-      activeBg: 'from-green-500/10 to-green-400/5',
-      text: 'text-green-700',
-      ring: 'ring-green-300/50',
-    },
-    orange: {
-      border: 'border-l-orange-500',
-      bg: 'bg-orange-50/40',
-      activeBg: 'from-orange-500/10 to-orange-400/5',
-      text: 'text-orange-700',
-      ring: 'ring-orange-300/50',
-    },
-    cyan: {
-      border: 'border-l-cyan-500',
-      bg: 'bg-cyan-50/40',
-      activeBg: 'from-cyan-500/10 to-cyan-400/5',
-      text: 'text-cyan-700',
-      ring: 'ring-cyan-300/50',
-    },
+  const styles: any = {
+    blue:   "border-l-blue-500 text-blue-600 bg-blue-50/50",
+    cyan:   "border-l-cyan-500 text-cyan-600 bg-cyan-50/50",
+    purple: "border-l-purple-500 text-purple-600 bg-purple-50/50",
+    indigo: "border-l-indigo-500 text-indigo-600 bg-indigo-50/50",
+    rose:   "border-l-rose-500 text-rose-600 bg-rose-50/50",
+    green:  "border-l-green-500 text-green-600 bg-green-50/50",
+    emerald:"border-l-emerald-500 text-emerald-600 bg-emerald-50/50",
+    red:    "border-l-red-500 text-red-600 bg-red-50/50",
+    orange: "border-l-orange-500 text-orange-600 bg-orange-50/50",
+    amber:  "border-l-amber-500 text-amber-600 bg-amber-50/50",
   };
 
-  const config = colorConfig[color] || colorConfig.blue;
-
+  const currentStyle = styles[color] || styles.blue;
+  
   return (
     <div 
-      onClick={onClick}
+      onClick={onClick} 
       className={`
-        relative p-4 rounded-xl border border-l-4 ${config.border}
-        cursor-pointer transition-all duration-300 ease-out
-        ${active 
-          ? `bg-gradient-to-br ${config.activeBg} ring-2 ${config.ring} shadow-lg shadow-${color}-200/50 scale-105` 
-          : `bg-white hover:${config.bg} hover:shadow-md`
-        }
-        backdrop-blur-sm overflow-hidden group
+        p-4 rounded-lg shadow-sm border border-slate-200 border-l-4 
+        cursor-pointer hover:shadow-md transition-all relative overflow-hidden
+        bg-white
+        ${currentStyle}
+        ${active ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
       `}
     >
-      {/* Gradient overlay for active state */}
-      {active && (
-        <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-50 rounded-xl pointer-events-none" />
-      )}
-      
-      <div className="relative z-10 flex justify-between items-start">
-        <div>
-          <p className={`text-xs font-semibold uppercase tracking-wider ${active ? config.text : 'text-slate-500'} transition-colors duration-300`}>
-            {title}
-          </p>
-          <h3 className={`text-3xl font-bold mt-2 transition-all duration-300 ${active ? config.text : 'text-slate-900'}`}>
-            {value}
-          </h3>
+        <div className="flex justify-between items-center relative z-10">
+            <div>
+              <h3 className="text-2xl font-bold">{value}</h3>
+              <p className="text-sm font-medium opacity-80">{title}</p>
+            </div>
         </div>
         
         {/* Visual indicator dot */}
         {active && (
-          <div className={`w-2 h-2 rounded-full bg-gradient-to-br ${config.activeBg} animate-pulse`} />
+          <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
         )}
-      </div>
       
-      {/* Bottom accent line */}
-      <div className={`absolute bottom-0 left-0 h-1 bg-gradient-to-r ${config.activeBg} transition-all duration-300 ${active ? 'w-full' : 'w-0 group-hover:w-1/3'}`} />
+        {/* Bottom accent line */}
+        <div className={`absolute bottom-0 left-0 h-1 bg-current transition-all duration-300 opacity-20 ${active ? 'w-full' : 'w-0 group-hover:w-1/3'}`} />
     </div>
   );
 };
