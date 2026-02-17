@@ -25,20 +25,21 @@ const candidateSchema = mongoose.Schema({
   
   // --- Status & Recruitment ---
   status: { 
-    type: String, 
+    type: [String], // ✅ This Array type supports Multi-Select and "Select All"
     enum: [
-      'Submitted',        // Default Initial Status
-      'Shared Profiles',  // New
-      'Yet to attend',    // New
-      'Turnups',          // New
-      'No Show',          // New
-      'Selected',         // New
-      'Joinings',         // New
-      'Rejected',         // Existing
-      'Hold',             // New
-      'Backout'           // New
+      'Submitted',
+      'Shared Profiles',
+      'Yet to attend',
+      'Turnups',
+      'No Show',
+      'Selected',
+      'Joined',
+      'Rejected',
+      'Pipeline',
+      'Hold',
+      'Backout'
     ],
-    default: 'Submitted'
+    default: ['Submitted']
   },
   source: { type: String, default: 'Portal' },
   rating: { type: Number, default: 0 },
@@ -48,7 +49,10 @@ const candidateSchema = mongoose.Schema({
   relevantExperience: { type: String },
   ctc: { type: String },
   ectc: { type: String },
-  takeHomeSalary: { type: String },
+  
+  // ✅ Renamed field to match Frontend
+  currentTakeHome: { type: String }, 
+  expectedTakeHome: { type: String }, 
 
   // --- Offers ---
   offersInHand: { type: Boolean, default: false },

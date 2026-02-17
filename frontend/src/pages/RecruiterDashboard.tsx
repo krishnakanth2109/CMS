@@ -560,7 +560,7 @@ export default function RecruiterDashboard() {
               iconColor="text-purple-600 dark:text-purple-400" 
             />
             <ProfessionalStatCard 
-              title="Joined Success Rate" 
+              title="Performance" 
               value={`${candidateStats.successRate}%`} 
               icon={TrendingUp} 
               trend={parseFloat(candidateStats.successRate) > 0 ? 1 : 0} 

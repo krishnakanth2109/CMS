@@ -21,7 +21,7 @@ import {
   Plus, Search, Edit, Download, Phone, Mail,
   Building, Briefcase, Loader2, Ban, List, LayoutGrid,
   Calendar, GraduationCap, Award, UserCircle, Star, Target, 
-  MessageSquare, Linkedin, MessageCircle, Eye, IndianRupee, Upload, FileUp, FileText
+  MessageSquare, Linkedin, MessageCircle, Eye, IndianRupee, Upload, FileUp, FileText, X, CheckSquare
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Candidate, Job } from '@/types'; 
@@ -42,6 +42,7 @@ interface BackendCandidate extends Candidate {
   noticePeriod?: string;
   education?: string;
   source?: string;
+  status?: string[] | string; 
   rating?: number;
   assignedJobId?: string;
   active?: boolean;
@@ -55,6 +56,7 @@ interface BackendCandidate extends Candidate {
   offerPackage?: string;
   servingNoticePeriod?: boolean;
   noticePeriodDays?: string;
+  takeHomeSalary?: string;
 }
 
 interface BackendJob extends Job {
@@ -76,12 +78,15 @@ interface CandidateFormData {
   totalExperience: string; relevantExperience: string;
   education: string;
   ctc: string; ectc: string; 
+  takeHomeSalary: string;
   noticePeriod: string;
   servingNoticePeriod: string;
   noticePeriodDays: string;
   offersInHand: string;
   offerPackage: string;
-  source: string; status: string; rating: string; assignedJobId: string; dateAdded: string;
+  source: string; 
+  status: string[];
+  rating: string; assignedJobId: string; dateAdded: string;
   notes: string; remarks: string;
   active: boolean;
 }
@@ -116,7 +121,6 @@ export default function RecruiterCandidates() {
 
   const standardSources = ['Portal', 'LinkedIn', 'Referral', 'Direct', 'Agency'];
   
-  // --- UPDATED STATUS LIST ---
   const allStatuses = [
     'Submitted',
     'Shared Profiles',
@@ -124,8 +128,9 @@ export default function RecruiterCandidates() {
     'Turnups',
     'No Show',
     'Selected',
-    'Joinings',
+    'Joined',
     'Rejected',
+    'Pipeline',
     'Hold',
     'Backout'
   ];
@@ -139,12 +144,15 @@ export default function RecruiterCandidates() {
     totalExperience: '', relevantExperience: '',
     education: '',
     ctc: '', ectc: '', 
+    takeHomeSalary: '', 
     noticePeriod: '',
     servingNoticePeriod: 'false',
     noticePeriodDays: '',
     offersInHand: 'false',
     offerPackage: '',
-    source: 'Portal', status: 'Submitted', rating: '0', assignedJobId: '',
+    source: 'Portal', 
+    status: ['Submitted'], 
+    rating: '0', assignedJobId: '',
     dateAdded: new Date().toISOString().split('T')[0],
     notes: '', remarks: '',
     active: true
@@ -236,7 +244,13 @@ export default function RecruiterCandidates() {
 
         myCandidates.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-        setCandidates(myCandidates);
+        // Ensure status is treated as array even if legacy data is string
+        const fixedCandidates = myCandidates.map((c: any) => ({
+            ...c,
+            status: Array.isArray(c.status) ? c.status : [c.status || 'Submitted']
+        }));
+
+        setCandidates(fixedCandidates);
         setJobs(allJobs);
         setClients(allClients);
       }
@@ -263,11 +277,31 @@ export default function RecruiterCandidates() {
       newValue = value.replace(/\D/g, ''); 
       if (newValue.length > 10) return; 
     }
-    if (['totalExperience', 'relevantExperience', 'ctc', 'ectc'].includes(key)) {
+    if (['totalExperience', 'relevantExperience', 'ctc', 'ectc', 'takeHomeSalary'].includes(key)) {
        if (!/^\d*\.?\d*$/.test(value)) return;
     }
     setFormData(prev => ({ ...prev, [key]: newValue }));
     if (errors[key]) setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
+  };
+
+  // --- UPDATED Status Handlers with "Select All" Logic ---
+  const addStatus = (newStatus: string) => {
+    if (newStatus === 'SELECT_ALL') {
+      // ✅ "Select All" logic: Set formData.status to the entire array of allStatuses
+      setFormData(prev => ({ ...prev, status: [...allStatuses] }));
+    } else {
+      // Standard logic: Add only if not already present
+      if (!formData.status.includes(newStatus)) {
+        setFormData(prev => ({ ...prev, status: [...prev.status, newStatus] }));
+      }
+    }
+  };
+
+  const removeStatus = (statusToRemove: string) => {
+    setFormData(prev => ({ 
+      ...prev, 
+      status: prev.status.filter(s => s !== statusToRemove) 
+    }));
   };
 
   const validateForm = () => {
@@ -289,28 +323,35 @@ export default function RecruiterCandidates() {
 
     if (data.servingNoticePeriod === 'true' && !data.noticePeriodDays.trim()) newErrors.noticePeriodDays = "Please specify days";
     if (data.offersInHand === 'true' && !data.offerPackage.trim()) newErrors.offerPackage = "Please specify package amount";
+    
+    if (data.status.length === 0) newErrors.status = "At least one status is required";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // --- 1. UPDATED: Stats Calculation Logic ---
+  // --- Stats Calculation Logic ---
   const stats = useMemo(() => {
+    const countStatus = (s: string) => candidates.filter(c => 
+        Array.isArray(c.status) ? c.status.includes(s) : c.status === s
+    ).length;
+
     return {
       total: candidates.length,
-      turnups: candidates.filter(c => c.status === 'Turnups').length,
-      noShow: candidates.filter(c => c.status === 'No Show').length,
-      yetToAttend: candidates.filter(c => c.status === 'Yet to attend').length,
-      selected: candidates.filter(c => c.status === 'Selected').length,
-      rejected: candidates.filter(c => c.status === 'Rejected').length,
-      hold: candidates.filter(c => c.status === 'Hold').length,
-      joinings: candidates.filter(c => c.status === 'Joinings').length,
-      backout: candidates.filter(c => c.status === 'Backout').length,
-      sharedProfiles: candidates.filter(c => c.status === 'Shared Profiles').length,
+      turnups: countStatus('Turnups'),
+      noShow: countStatus('No Show'),
+      yetToAttend: countStatus('Yet to attend'),
+      selected: countStatus('Selected'),
+      rejected: countStatus('Rejected'),
+      hold: countStatus('Hold'),
+      joined: countStatus('Joined'),
+      pipeline: countStatus('Pipeline'),
+      backout: countStatus('Backout'),
+      sharedProfiles: countStatus('Shared Profiles'),
     };
   }, [candidates]);
 
-  // --- 2. UPDATED: Filter Logic ---
+  // --- Filter Logic ---
   const getFilteredCandidates = useMemo(() => {
     return candidates.filter(c => {
       const searchMatch = 
@@ -319,14 +360,12 @@ export default function RecruiterCandidates() {
         c.candidateId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (Array.isArray(c.skills) && c.skills.some(skill => skill.toLowerCase().includes(searchTerm.toLowerCase())));
 
-      // Dropdown status filter
-      const statusDropdownMatch = statusFilter === 'all' || c.status === statusFilter;
+      const currentStatusArr = Array.isArray(c.status) ? c.status : [c.status || ''];
+      const statusDropdownMatch = statusFilter === 'all' || currentStatusArr.includes(statusFilter);
 
-      // Card click filter (overrides standard status grouping)
       let statCardMatch = true;
       if (activeStatFilter) {
-        // Strict match based on the status clicked in the card
-        statCardMatch = c.status === activeStatFilter;
+        statCardMatch = currentStatusArr.includes(activeStatFilter);
       }
 
       return searchMatch && statusDropdownMatch && statCardMatch;
@@ -339,12 +378,12 @@ export default function RecruiterCandidates() {
       toast({ title: "No data to export", variant: "destructive" });
       return;
     }
-    const headers = ["Candidate ID", "Name", "Email", "Phone", "Client", "Position", "Status", "Total Exp", "Current CTC", "Expected CTC", "Skills", "Date Added"];
+    const headers = ["Candidate ID", "Name", "Email", "Phone", "Client", "Position", "Status", "Total Exp", "Current CTC", "Expected CTC", "Take Home", "Skills", "Date Added"];
     const escapeCsv = (str: string | undefined | null) => str ? `"${String(str).replace(/"/g, '""')}"` : '""';
     const rows = getFilteredCandidates.map(c => [
       escapeCsv(getCandidateId(c)), escapeCsv(c.name), escapeCsv(c.email), escapeCsv(c.contact),
-      escapeCsv(c.client), escapeCsv(c.position), escapeCsv(c.status), escapeCsv(c.totalExperience),
-      escapeCsv(c.ctc), escapeCsv(c.ectc), escapeCsv(Array.isArray(c.skills) ? c.skills.join(', ') : c.skills),
+      escapeCsv(c.client), escapeCsv(c.position), escapeCsv(Array.isArray(c.status) ? c.status.join(' | ') : c.status), escapeCsv(c.totalExperience),
+      escapeCsv(c.ctc), escapeCsv(c.ectc), escapeCsv(c.takeHomeSalary), escapeCsv(Array.isArray(c.skills) ? c.skills.join(', ') : c.skills),
       escapeCsv(new Date(c.dateAdded || c.createdAt || new Date()).toLocaleDateString())
     ]);
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -356,7 +395,7 @@ export default function RecruiterCandidates() {
   };
 
   const getStatusBadgeVariant = (status: string | undefined) => {
-    if (status === 'Joinings' || status === 'Selected') return 'default'; // Greenish usually
+    if (status === 'Joined' || status === 'Selected') return 'default'; 
     if (status === 'Rejected' || status === 'Backout' || status === 'No Show') return 'destructive';
     if (status === 'Hold' || status === 'Yet to attend' || status === 'Turnups') return 'secondary';
     return 'outline';
@@ -398,12 +437,15 @@ export default function RecruiterCandidates() {
       education: c.education || '', 
       ctc: c.ctc ? String(c.ctc) : '', 
       ectc: c.ectc ? String(c.ectc) : '', 
+      takeHomeSalary: c.takeHomeSalary ? String(c.takeHomeSalary) : '', 
       noticePeriod: c.noticePeriod ? String(c.noticePeriod) : '',
       servingNoticePeriod: c.servingNoticePeriod ? 'true' : 'false',
       noticePeriodDays: c.noticePeriodDays || '',
       offersInHand: c.offersInHand ? 'true' : 'false',
       offerPackage: c.offerPackage || '',
-      source: c.source || 'Portal', status: c.status || 'Submitted', rating: c.rating?.toString() || '0',
+      source: c.source || 'Portal', 
+      status: Array.isArray(c.status) ? c.status : [c.status || 'Submitted'], 
+      rating: c.rating?.toString() || '0',
       assignedJobId: typeof c.assignedJobId === 'object' ? (c.assignedJobId as any)._id : c.assignedJobId || '',
       dateAdded: c.dateAdded ? new Date(c.dateAdded).toISOString().split('T')[0] : '',
       notes: c.notes || '', remarks: c.remarks || '', active: c.active !== false
@@ -484,29 +526,33 @@ export default function RecruiterCandidates() {
             </div>
           </div>
 
-          {/* --- 3. UPDATED: Stats Grid with Correct Data Mapping --- */}
-          <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
+          {/* --- UPDATED: Stats Grid (Reordered to your Request) --- */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {/* 1. Overall Submissions */}
             <StatCard 
-              title="Total Submitted" 
+              title="Overall Submissions" 
               value={stats.total} 
               color="blue" 
               active={activeStatFilter === null} 
               onClick={() => setActiveStatFilter(null)} 
             />
+            {/* 2. Turnups */}
             <StatCard 
               title="Turnups" 
               value={stats.turnups} 
-              color="indigo" 
+              color="cyan" 
               active={activeStatFilter === 'Turnups'} 
               onClick={() => setActiveStatFilter('Turnups')} 
             />
+            {/* 3. No Show */}
             <StatCard 
               title="No Show" 
               value={stats.noShow} 
-              color="red" 
+              color="indigo" 
               active={activeStatFilter === 'No Show'} 
               onClick={() => setActiveStatFilter('No Show')} 
             />
+            {/* 4. Yet to attend */}
             <StatCard 
               title="Yet to attend" 
               value={stats.yetToAttend} 
@@ -514,6 +560,7 @@ export default function RecruiterCandidates() {
               active={activeStatFilter === 'Yet to attend'} 
               onClick={() => setActiveStatFilter('Yet to attend')} 
             />
+            {/* 5. Selected */}
             <StatCard 
               title="Selected" 
               value={stats.selected} 
@@ -521,34 +568,47 @@ export default function RecruiterCandidates() {
               active={activeStatFilter === 'Selected'} 
               onClick={() => setActiveStatFilter('Selected')} 
             />
+            {/* 6. Rejected */}
             <StatCard 
               title="Rejected" 
               value={stats.rejected} 
-              color="rose" 
+              color="red" 
               active={activeStatFilter === 'Rejected'} 
               onClick={() => setActiveStatFilter('Rejected')} 
             />
+            {/* 7. Hold */}
             <StatCard 
               title="Hold" 
               value={stats.hold} 
-              color="orange" 
+              color="amber" 
               active={activeStatFilter === 'Hold'} 
               onClick={() => setActiveStatFilter('Hold')} 
             />
+            {/* 8. Pipeline */}
             <StatCard 
-              title="Joinings" 
-              value={stats.joinings} 
-              color="emerald" 
-              active={activeStatFilter === 'Joinings'} 
-              onClick={() => setActiveStatFilter('Joinings')} 
+              title="Pipeline" 
+              value={stats.pipeline} 
+              color="orange" 
+              active={activeStatFilter === 'Pipeline'} 
+              onClick={() => setActiveStatFilter('Pipeline')} 
             />
+            {/* 9. Joined */}
+            <StatCard 
+              title="Joined" 
+              value={stats.joined} 
+              color="emerald" 
+              active={activeStatFilter === 'Joined'} 
+              onClick={() => setActiveStatFilter('Joined')} 
+            />
+            {/* 10. Backout */}
             <StatCard 
               title="Backout" 
               value={stats.backout} 
-              color="slate" 
+              color="red" 
               active={activeStatFilter === 'Backout'} 
               onClick={() => setActiveStatFilter('Backout')} 
             />
+            {/* 11. Shared Profiles */}
             <StatCard 
               title="Shared Profiles" 
               value={stats.sharedProfiles} 
@@ -621,7 +681,13 @@ export default function RecruiterCandidates() {
                         <td className="p-3 text-sm">{c.totalExperience} Yrs</td>
                         <td className="p-3 text-xs"><div>{c.ctc || '-'}</div><div className="text-green-600">{c.ectc || '-'}</div></td>
                         <td className="p-3 text-sm"><Badge variant="outline">{c.noticePeriod || '-'}</Badge></td>
-                        <td className="p-3"><Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge></td>
+                        <td className="p-3">
+                          <div className="flex flex-wrap gap-1">
+                            {Array.isArray(c.status) ? c.status.map(s => (
+                              <Badge key={s} variant={getStatusBadgeVariant(s)} className="text-[10px] px-1 py-0">{s}</Badge>
+                            )) : <Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge>}
+                          </div>
+                        </td>
                         <td className="p-3 text-xs text-slate-500 truncate max-w-[100px]">{c.remarks}</td>
                         <td className="p-3 text-right">
                           <div className="flex justify-end gap-1">
@@ -649,7 +715,12 @@ export default function RecruiterCandidates() {
                                         <p className="text-sm text-blue-600 font-mono">{getCandidateId(c)}</p>
                                     </div>
                                 </div>
-                                <Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge>
+                                <div className="flex flex-wrap gap-1 justify-end max-w-[50%]">
+                                  {Array.isArray(c.status) ? c.status.slice(0, 2).map(s => (
+                                    <Badge key={s} variant={getStatusBadgeVariant(s)} className="text-[10px]">{s}</Badge>
+                                  )) : <Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge>}
+                                  {Array.isArray(c.status) && c.status.length > 2 && <span className="text-xs text-slate-500">+{c.status.length - 2}</span>}
+                                </div>
                             </div>
                             <div className="space-y-2 text-sm text-slate-600">
                                 <div className="flex items-center gap-2"><Building className="h-4 w-4"/> {c.client}</div>
@@ -676,7 +747,6 @@ export default function RecruiterCandidates() {
             <DialogHeader>
                 <DialogTitle>{isEditDialogOpen ? 'Edit Candidate' : 'Add New Candidate'}</DialogTitle>
             </DialogHeader>
-            {/* ... [Resume Upload Section same as before] ... */}
             {!isEditDialogOpen && (
               <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-6 bg-slate-50 dark:bg-slate-900/50 mb-4">
                 <div className="flex flex-col items-center gap-3">
@@ -758,7 +828,6 @@ export default function RecruiterCandidates() {
                 {errors.skills && <span className="text-xs text-red-500">{errors.skills}</span>}
               </div>
 
-              {/* ... [Education, Experience, Pay sections same as before] ... */}
               <div className="md:col-span-3 font-semibold text-slate-500 border-b pb-1 mt-4 flex items-center gap-2"><GraduationCap className="h-4 w-4"/> Education</div>
               <div className="md:col-span-3 space-y-1"><Label>Qualification</Label><Input value={formData.education} onChange={e => handleInputChange('education', e.target.value)} placeholder="e.g. B.Tech from IIT Delhi"/></div>
 
@@ -782,8 +851,8 @@ export default function RecruiterCandidates() {
                 </div>
               )}
 
-              <div className="space-y-2"><Label>Current CTC</Label><Input value={formData.ctc} onChange={e => handleInputChange('ctc', e.target.value)} placeholder="Numbers only"/></div>
-              <div className="space-y-2"><Label>Expected CTC</Label><Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)} placeholder="Numbers only"/></div>
+              <div className="space-y-2"><Label>Current CTC (Lakhs)</Label><Input value={formData.ctc} onChange={e => handleInputChange('ctc', e.target.value)} placeholder="Numbers only"/></div>
+              <div className="space-y-2"><Label>Expected CTC (Lakhs)</Label><Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)} placeholder="Numbers only"/></div>
               
               <div className="space-y-2">
                   <Label>Offers in Hand?</Label>
@@ -792,6 +861,26 @@ export default function RecruiterCandidates() {
                      <SelectContent><SelectItem value="false">No</SelectItem><SelectItem value="true">Yes</SelectItem></SelectContent>
                   </Select>
                </div>
+               
+               {/* --- UPDATED: Take Home Salary Input --- */}
+               <div className="space-y-2">
+                 <Label> Current Take Home (Thousands)</Label>
+                 <Input 
+                   value={formData.currentTakeHome} 
+                   onChange={e => handleInputChange('currentTakeHome', e.target.value)} 
+                   placeholder="Numbers only"
+                  />
+               </div>
+               <div className="space-y-2">
+                 <Label> Expected Take Home (Thousands)</Label>
+                 <Input 
+                   value={formData.expectedTakeHome} 
+                   onChange={e => handleInputChange('expectedTakeHome', e.target.value)} 
+                   placeholder="Numbers only"
+                  />
+               </div>
+               <div className="space-y-2"><Label>Reason For Change</Label><Textarea value={formData.notes} onChange={e => handleInputChange('notes', e.target.value)} className="w-full border rounded-md p-2 h-10 text-sm"
+  placeholder="Reason for changing"/></div>
 
                {formData.offersInHand === 'true' && (
                  <div className="space-y-2 animate-in fade-in zoom-in-95">
@@ -818,24 +907,53 @@ export default function RecruiterCandidates() {
                 </Select>
               </div>
 
-              {/* --- 4. UPDATED: Status Dropdown in Form --- */}
+              {/* --- UPDATED: Status Multi-Select --- */}
               <div className="space-y-2">
-                <Label>Status</Label>
-                <Select value={formData.status} onValueChange={v => handleInputChange('status', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select Status"/></SelectTrigger>
+                <Label className={errors.status ? "text-red-500" : ""}>Status (Multi-select)</Label>
+                
+                {/* Box showing selected options */}
+                <div className={`border rounded-md p-2 min-h-[42px] flex flex-wrap gap-2 bg-white dark:bg-slate-900 ${errors.status ? 'border-red-500' : ''}`}>
+                  {formData.status.length > 0 ? (
+                    formData.status.map(status => (
+                      <Badge key={status} variant="secondary" className="flex items-center gap-1">
+                        {status}
+                        <X 
+                          className="h-3 w-3 cursor-pointer hover:text-red-500" 
+                          onClick={() => removeStatus(status)}
+                        />
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-sm text-slate-400 p-1">No status selected</span>
+                  )}
+                </div>
+
+                {/* Dropdown with key={} force reset trick */}
+                <Select 
+                  key={formData.status.length} // Forces component reset after selection
+                  onValueChange={addStatus}
+                >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Add a status..." />
+                    </SelectTrigger>
                     <SelectContent>
+                        {/* ✅ Added Select All Option */}
+                        <SelectItem value="SELECT_ALL" className="font-bold border-b border-slate-200 mb-1 text-blue-600">
+                           <div className="flex items-center gap-2"><CheckSquare className="h-4 w-4"/> Select All</div>
+                        </SelectItem>
                         {allStatuses.map(status => (
-                            <SelectItem key={status} value={status}>{status}</SelectItem>
+                            <SelectItem key={status} value={status} disabled={formData.status.includes(status)}>
+                              {status}
+                            </SelectItem>
                         ))}
                     </SelectContent>
                 </Select>
+                {errors.status && <span className="text-xs text-red-500">{errors.status}</span>}
               </div>
               
               <div className="space-y-2"><Label>Rating</Label><Select value={formData.rating} onValueChange={v => handleInputChange('rating', v)}><SelectTrigger><SelectValue placeholder="Rate"/></SelectTrigger><SelectContent>{[1,2,3,4,5].map(r=><SelectItem key={r} value={r.toString()}>{r} Stars</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-2"><Label>Date Added</Label><Input type="date" value={formData.dateAdded} onChange={e => handleInputChange('dateAdded', e.target.value)}/></div>
-
               <div className="md:col-span-3 space-y-2 mt-2"><Label>Remarks</Label><Textarea value={formData.remarks} onChange={e => handleInputChange('remarks', e.target.value)}/></div>
-              <div className="md:col-span-3 space-y-2"><Label>Internal Notes</Label><Textarea value={formData.notes} onChange={e => handleInputChange('notes', e.target.value)}/></div>
             </div>
             <DialogFooter>
                 <Button variant="outline" onClick={() => { setIsAddDialogOpen(false); setIsEditDialogOpen(false); }}>Cancel</Button>
@@ -844,16 +962,20 @@ export default function RecruiterCandidates() {
         </DialogContent>
       </Dialog>
       
-      {/* View Dialog Logic remains same... */}
+      {/* View Dialog Logic */}
       {viewingCandidate && (
         <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-             {/* ... [Same content as original View Dialog] ... */}
             <DialogHeader>
               <DialogTitle className="text-2xl flex items-center gap-3">
                 <Avatar className="h-10 w-10"><AvatarFallback className="bg-blue-600 text-white">{getInitials(viewingCandidate.name)}</AvatarFallback></Avatar>
                 {viewingCandidate.name} 
-                <Badge variant={getStatusBadgeVariant(viewingCandidate.status)} className="ml-auto">{viewingCandidate.status}</Badge>
+                <div className="ml-auto flex flex-wrap gap-2">
+                  {Array.isArray(viewingCandidate.status) ? 
+                    viewingCandidate.status.map(s => <Badge key={s} variant={getStatusBadgeVariant(s)}>{s}</Badge>) : 
+                    <Badge variant={getStatusBadgeVariant(viewingCandidate.status)}>{viewingCandidate.status}</Badge>
+                  }
+                </div>
               </DialogTitle>
               <DialogDescription className="font-mono text-blue-600 text-sm">ID: {getCandidateId(viewingCandidate)}</DialogDescription>
             </DialogHeader>
@@ -894,6 +1016,9 @@ export default function RecruiterCandidates() {
                       <div><Label className="text-xs text-slate-500">Current CTC</Label><div>{viewingCandidate.ctc}</div></div>
                       <div><Label className="text-xs text-slate-500">Expected CTC</Label><div>{viewingCandidate.ectc}</div></div>
                       
+                      {/* --- Added Take Home Salary View --- */}
+                      <div><Label className="text-xs text-slate-500">Take Home Salary</Label><div>{viewingCandidate.takeHomeSalary || '-'}</div></div>
+
                       {viewingCandidate.servingNoticePeriod && (
                         <div><Label className="text-xs text-slate-500">Notice Period</Label><div className="text-amber-600 font-medium">Serving ({viewingCandidate.noticePeriodDays} days left)</div></div>
                       )}
@@ -911,17 +1036,13 @@ export default function RecruiterCandidates() {
                       <div><Label className="text-xs text-slate-500">Recruiter</Label><div>{viewingCandidate.recruiterName || 'Self'}</div></div>
                       <div><Label className="text-xs text-slate-500">Date Added</Label><div>{formatDate(viewingCandidate.dateAdded)}</div></div>
                       <div><Label className="text-xs text-slate-500">Rating</Label><div className="flex items-center gap-1">{viewingCandidate.rating} <Star className="h-3 w-3 fill-yellow-400 text-yellow-400"/></div></div>
-                      {viewingCandidate.status === 'Rejected' && <div className="col-span-2 text-red-600"><Label className="text-xs text-red-400">Rejection Reason</Label><div>{viewingCandidate.rejectionReason}</div></div>}
+                      {Array.isArray(viewingCandidate.status) && viewingCandidate.status.includes('Rejected') && <div className="col-span-2 text-red-600"><Label className="text-xs text-red-400">Rejection Reason</Label><div>{viewingCandidate.rejectionReason}</div></div>}
                    </div>
                 </div>
                 <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100">
-                        <Label className="text-xs font-semibold text-yellow-700 flex items-center gap-2 mb-2"><FileText className="h-3 w-3"/> Internal Notes</Label>
+                        <Label className="text-xs font-semibold text-yellow-700 flex items-center gap-2 mb-2"><FileText className="h-3 w-3"/>Remarks</Label>
                         <p className="text-sm text-yellow-900 whitespace-pre-wrap">{viewingCandidate.notes || 'No internal notes.'}</p>
-                    </div>
-                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                        <Label className="text-xs font-semibold text-blue-700 flex items-center gap-2 mb-2"><MessageSquare className="h-3 w-3"/> Remarks</Label>
-                        <p className="text-sm text-blue-900 whitespace-pre-wrap">{viewingCandidate.remarks || 'No remarks.'}</p>
                     </div>
                 </div>
             </div>
@@ -936,10 +1057,39 @@ export default function RecruiterCandidates() {
   );
 }
 
-const StatCard = ({ title, value, color, active, onClick }: any) => (
-    <div onClick={onClick} className={`p-4 rounded-lg shadow-sm border border-l-4 border-l-${color}-500 bg-white ${active ? 'ring-2 ring-blue-500' : ''} cursor-pointer hover:bg-slate-50 transition-colors`}>
+const StatCard = ({ title, value, color, active, onClick }: any) => {
+  const styles: any = {
+    blue:   "border-l-blue-500 text-blue-600 bg-blue-50/50",
+    cyan:   "border-l-cyan-500 text-cyan-600 bg-cyan-50/50",
+    purple: "border-l-purple-500 text-purple-600 bg-purple-50/50",
+    indigo: "border-l-indigo-500 text-indigo-600 bg-indigo-50/50",
+    rose:   "border-l-rose-500 text-rose-600 bg-rose-50/50",
+    green:  "border-l-green-500 text-green-600 bg-green-50/50",
+    emerald:"border-l-emerald-500 text-emerald-600 bg-emerald-50/50",
+    red:    "border-l-red-500 text-red-600 bg-red-50/50",
+    orange: "border-l-orange-500 text-orange-600 bg-orange-50/50",
+    amber:  "border-l-amber-500 text-amber-600 bg-amber-50/50",
+  };
+
+  const currentStyle = styles[color] || styles.blue;
+  
+  return (
+    <div 
+      onClick={onClick} 
+      className={`
+        p-4 rounded-lg shadow-sm border border-slate-200 border-l-4 
+        cursor-pointer hover:shadow-md transition-all
+        bg-white
+        ${currentStyle}
+        ${active ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
+      `}
+    >
         <div className="flex justify-between items-center">
-            <div><h3 className="text-2xl font-bold">{value}</h3><p className="text-sm text-slate-500">{title}</p></div>
+            <div>
+              <h3 className="text-2xl font-bold">{value}</h3>
+              <p className="text-sm font-medium opacity-80">{title}</p>
+            </div>
         </div>
     </div>
-);
+  );
+};
