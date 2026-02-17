@@ -7,7 +7,9 @@ import User from '../models/User.js';
 import { parseResume } from './resumeParser.js'; 
 import { protect } from '../middleware/authMiddleware.js'; 
 import { updateCandidateStatus, updateCandidateRemarks, inlineUpdateCandidate } from '../controllers/candidateStatusController.js';
-import { bulkImportCandidates } from '../controllers/bulkImportController.js';
+
+// --- FIX: Import the bulkImportCandidates controller ---
+import { bulkImportCandidates } from '../controllers/bulkImportController.js'; 
 
 const router = express.Router();
 
@@ -239,7 +241,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Update Candidate
+// UPDATE CANDIDATE
 router.put('/:id', upload.single('resume'), async (req, res) => {
   try {
     let updateData = sanitizeBody(req.body);

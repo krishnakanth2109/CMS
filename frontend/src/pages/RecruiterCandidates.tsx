@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
@@ -22,7 +23,7 @@ import {
   Building, Briefcase, Loader2, Ban, List, LayoutGrid,
   Calendar, GraduationCap, Award, UserCircle, Star, Target, 
   MessageSquare, Linkedin, MessageCircle, Eye, IndianRupee, Upload, FileUp, FileText,
-  Trash2, AlertTriangle // Added Trash2 and AlertTriangle
+  Trash2, AlertTriangle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Candidate, Job } from '@/types'; 
@@ -90,6 +91,7 @@ interface CandidateFormData {
 export default function RecruiterCandidates() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   
   // --- State Management ---
   const [candidates, setCandidates] = useState<BackendCandidate[]>([]);
@@ -105,6 +107,16 @@ export default function RecruiterCandidates() {
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null); 
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
+  
+  // Status Update Cascading Dropdown
+  const [statusEditingId, setStatusEditingId] = useState<string | null>(null);
+  const [selectedLevel, setSelectedLevel] = useState<string>('');
+  const [selectedOutcome, setSelectedOutcome] = useState<string>('');
+  const [tempStatus, setTempStatus] = useState<string>('');
+  
+  // Remarks Inline Editing
+  const [remarksEditingId, setRemarksEditingId] = useState<string | null>(null);
+  const [editingRemarks, setEditingRemarks] = useState<string>('');
   
   // Dialogs
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -123,17 +135,42 @@ export default function RecruiterCandidates() {
   
   // --- UPDATED STATUS LIST ---
   const allStatuses = [
-    'Submitted',
     'Shared Profiles',
     'Yet to attend',
     'Turnups',
     'No Show',
     'Selected',
-    'Joinings',
+    'Joined',
     'Rejected',
     'Hold',
     'Backout'
   ];
+
+  // Interview Levels and Outcomes for Cascading Dropdown
+  const interviewLevels = ['L1', 'L2', 'L3', 'L4', 'L5'];
+  const interviewOutcomes = ['SELECT', 'REJECT', 'HOLD', 'JOINED'];
+
+  // Helper to extract canonical outcome from status string (handles `L1 - SELECT` etc.)
+  const outcomeOfStatus = (status?: string | null) => {
+    if (!status) return '';
+    const s = status.toString().trim();
+    // Match patterns like L1 - SELECT, L2-REJECT, etc.
+    const m = s.match(/^L\s*([1-5])\s*-\s*(SELECT|REJECT|HOLD|JOIN|JOINED)$/i);
+    if (m) {
+      const out = m[2].toUpperCase();
+      if (out === 'SELECT') return 'Selected';
+      if (out === 'REJECT') return 'Rejected';
+      if (out === 'HOLD') return 'Hold';
+      if (out === 'JOIN' || out === 'JOINED') return 'Joined';
+    }
+    // Fallback mappings for plain statuses
+    const plain = s.toLowerCase();
+    if (plain === 'selected') return 'Selected';
+    if (plain === 'rejected') return 'Rejected';
+    if (plain === 'hold') return 'Hold';
+    if (plain === 'joined' || plain === 'join') return 'Joined';
+    return s;
+  };
 
   const [isCustomSource, setIsCustomSource] = useState(false);
 
@@ -256,6 +293,15 @@ export default function RecruiterCandidates() {
     fetchData();
   }, []);
 
+  // --- Handle Query Parameter for Status Filter ---
+  useEffect(() => {
+    const status = searchParams.get('status');
+    if (status) {
+      setActiveStatFilter(status);
+      setStatusFilter('all');
+    }
+  }, [searchParams]);
+
   const uniquePositions = useMemo(() => {
     const positions = jobs.map(j => j.position).filter(Boolean);
     return Array.from(new Set(positions));
@@ -303,13 +349,13 @@ export default function RecruiterCandidates() {
   const stats = useMemo(() => {
     return {
       total: candidates.length,
-      turnups: candidates.filter(c => c.status === 'Turnups').length,
+      turnups: candidates.filter(c => outcomeOfStatus(c.status) === 'Turnups' || c.status === 'Turnups').length,
       noShow: candidates.filter(c => c.status === 'No Show').length,
       yetToAttend: candidates.filter(c => c.status === 'Yet to attend').length,
-      selected: candidates.filter(c => c.status === 'Selected').length,
-      rejected: candidates.filter(c => c.status === 'Rejected').length,
-      hold: candidates.filter(c => c.status === 'Hold').length,
-      joinings: candidates.filter(c => c.status === 'Joinings').length,
+      selected: candidates.filter(c => outcomeOfStatus(c.status) === 'Selected').length,
+      rejected: candidates.filter(c => outcomeOfStatus(c.status) === 'Rejected').length,
+      hold: candidates.filter(c => outcomeOfStatus(c.status) === 'Hold').length,
+      joined: candidates.filter(c => outcomeOfStatus(c.status) === 'Joined').length,
       backout: candidates.filter(c => c.status === 'Backout').length,
       sharedProfiles: candidates.filter(c => c.status === 'Shared Profiles').length,
     };
@@ -324,17 +370,19 @@ export default function RecruiterCandidates() {
         c.candidateId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (Array.isArray(c.skills) && c.skills.some(skill => skill.toLowerCase().includes(searchTerm.toLowerCase())));
 
-      // Dropdown status filter
-      const statusDropdownMatch = statusFilter === 'all' || c.status === statusFilter;
-
-      // Card click filter (overrides standard status grouping)
-      let statCardMatch = true;
+      // If a stat card is clicked, use that filter exclusively
       if (activeStatFilter) {
-        // Strict match based on the status clicked in the card
-        statCardMatch = c.status === activeStatFilter;
+        // If stat filter is one of canonical outcomes, match using outcomeOfStatus
+        const canonical = ['Selected', 'Rejected', 'Hold', 'Joined'];
+        if (canonical.includes(activeStatFilter)) {
+          return searchMatch && outcomeOfStatus(c.status) === activeStatFilter;
+        }
+        return searchMatch && c.status === activeStatFilter;
       }
 
-      return searchMatch && statusDropdownMatch && statCardMatch;
+      // Otherwise use the dropdown status filter
+      const statusDropdownMatch = statusFilter === 'all' || c.status === statusFilter;
+      return searchMatch && statusDropdownMatch;
     });
   }, [candidates, searchTerm, statusFilter, activeStatFilter]);
 
@@ -360,11 +408,22 @@ export default function RecruiterCandidates() {
     link.click();
   };
 
-  const getStatusBadgeVariant = (status: string | undefined) => {
-    if (status === 'Joinings' || status === 'Selected') return 'default'; // Greenish usually
-    if (status === 'Rejected' || status === 'Backout' || status === 'No Show') return 'destructive';
-    if (status === 'Hold' || status === 'Yet to attend' || status === 'Turnups') return 'secondary';
-    return 'outline';
+  const getStatusBadgeClass = (status: string | undefined) => {
+    const outcome = outcomeOfStatus(status);
+    switch (outcome) {
+      case 'Joined':
+        return 'bg-green-100 text-green-800 border border-green-200';
+      case 'Rejected':
+        // thick red for rejected
+        return 'bg-red-700 text-white border border-red-800';
+      case 'Hold':
+        // light red for hold
+        return 'bg-red-100 text-red-800 border border-red-200';
+      case 'Selected':
+        return 'bg-blue-100 text-blue-800 border border-blue-200';
+      default:
+        return 'bg-slate-100 text-slate-700 border border-slate-200';
+    }
   };
 
   const getInitials = (n: string) => n.split(' ').map(i => i[0]).join('').toUpperCase().substring(0,2);
@@ -379,6 +438,116 @@ export default function RecruiterCandidates() {
     if(!jobId) return 'Not Assigned';
     const job = jobs.find(j => j._id === jobId);
     return job ? `${job.position} (${job.clientName})` : jobId;
+  };
+
+  // --- Status Update Handler ---
+  const handleStatusLevelSelect = (level: string) => {
+    setSelectedLevel(level);
+    setSelectedOutcome(''); // Reset outcome when level changes
+  };
+
+  const handleStatusOutcomeSelect = async (outcome: string) => {
+    try {
+      // Map outcome to canonical status labels used across filters/stats
+      const mapOutcomeToStatus = (o: string) => {
+        const up = o.toUpperCase();
+        if (up === 'SELECT') return 'Selected';
+        if (up === 'REJECT') return 'Rejected';
+        if (up === 'HOLD') return 'Hold';
+        if (up === 'JOIN' || up === 'JOINED') return 'Joined';
+        return o;
+      };
+
+      const mappedOutcome = mapOutcomeToStatus(outcome);
+      // If a level was selected, save as `Lx - OUTCOME`, otherwise save canonical outcome
+      const newStatus = selectedLevel ? `${selectedLevel} - ${outcome}` : mappedOutcome;
+      setSelectedOutcome(outcome);
+      setTempStatus(newStatus);
+
+      // Find the candidate being edited
+      const candidateToUpdate = candidates.find(c => c._id === statusEditingId);
+      if (!candidateToUpdate) return;
+
+      // Make API call to update status
+      const headers = { 
+        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
+        'Content-Type': 'application/json'
+      };
+
+      const response = await fetch(`${API_URL}/candidates/${statusEditingId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      if (response.ok) {
+        toast({ title: "Status Updated", description: `Updated to: ${newStatus}`, duration: 2000 });
+        fetchData(); // Refresh candidate list
+      } else {
+        throw new Error('Failed to update status');
+      }
+    } catch (error) {
+      console.error('Status update error:', error);
+      toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
+    } finally {
+      setStatusEditingId(null);
+      setSelectedLevel('');
+      setTempStatus('');
+    }
+  };
+
+  const openStatusEditor = (candidateId: string, currentStatus: string) => {
+    setStatusEditingId(candidateId);
+    // If current status is like 'L1 - SELECT', prefill level and outcome
+    const match = (currentStatus || '').toString().match(/^L\s*([1-5])\s*-\s*(SELECT|REJECT|HOLD|JOIN|JOINED)$/i);
+    if (match) {
+      setSelectedLevel(`L${match[1]}`);
+      setSelectedOutcome(match[2].toUpperCase());
+    } else {
+      setSelectedLevel('');
+      setSelectedOutcome('');
+    }
+    setTempStatus(currentStatus);
+  };
+
+  // --- Remarks Update Handler ---
+  const openRemarksEditor = (candidateId: string, currentRemarks: string) => {
+    setRemarksEditingId(candidateId);
+    setEditingRemarks(currentRemarks || '');
+  };
+
+  const saveRemarks = async (candidateId: string) => {
+    try {
+      // Make API call to update remarks
+      const headers = { 
+        'Authorization': `Bearer ${sessionStorage.getItem('authToken')}`,
+        'Content-Type': 'application/json'
+      };
+
+      const response = await fetch(`${API_URL}/candidates/${candidateId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ remarks: editingRemarks })
+      });
+
+      if (response.ok) {
+        toast({ title: "Remarks Updated", description: editingRemarks || "Remarks cleared", duration: 2000 });
+        fetchData(); // Refresh candidate list
+      } else {
+        throw new Error('Failed to update remarks');
+      }
+    } catch (error) {
+      console.error('Remarks update error:', error);
+      toast({ title: "Error", description: "Failed to update remarks", variant: "destructive" });
+    } finally {
+      setRemarksEditingId(null);
+      setEditingRemarks('');
+    }
+  };
+
+  const cancelRemarksEdit = () => {
+    setRemarksEditingId(null);
+    setEditingRemarks('');
   };
 
   // --- Dialog Handlers ---
@@ -530,78 +699,79 @@ export default function RecruiterCandidates() {
           </div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <StatCard 
               title="Total Submitted" 
               value={stats.total} 
               color="blue" 
               active={activeStatFilter === null} 
-              onClick={() => setActiveStatFilter(null)} 
+              onClick={() => { setActiveStatFilter(null); setStatusFilter('all'); }} 
             />
             <StatCard 
               title="Turnups" 
               value={stats.turnups} 
-              color="indigo" 
+              color="black" 
               active={activeStatFilter === 'Turnups'} 
-              onClick={() => setActiveStatFilter('Turnups')} 
+              onClick={() => { setActiveStatFilter('Turnups'); setStatusFilter('all'); }} 
             />
             <StatCard 
               title="No Show" 
               value={stats.noShow} 
               color="red" 
               active={activeStatFilter === 'No Show'} 
-              onClick={() => setActiveStatFilter('No Show')} 
+              onClick={() => { setActiveStatFilter('No Show'); setStatusFilter('all'); }} 
             />
             <StatCard 
               title="Yet to attend" 
               value={stats.yetToAttend} 
               color="purple" 
               active={activeStatFilter === 'Yet to attend'} 
-              onClick={() => setActiveStatFilter('Yet to attend')} 
+              onClick={() => { setActiveStatFilter('Yet to attend'); setStatusFilter('all'); }} 
             />
             <StatCard 
               title="Selected" 
               value={stats.selected} 
               color="green" 
               active={activeStatFilter === 'Selected'} 
-              onClick={() => setActiveStatFilter('Selected')} 
+              onClick={() => { setActiveStatFilter('Selected'); setStatusFilter('all'); }} 
             />
             <StatCard 
               title="Rejected" 
               value={stats.rejected} 
-              color="rose" 
+              color="red" 
               active={activeStatFilter === 'Rejected'} 
-              onClick={() => setActiveStatFilter('Rejected')} 
+              onClick={() => { setActiveStatFilter('Rejected'); setStatusFilter('all'); }} 
             />
             <StatCard 
               title="Hold" 
               value={stats.hold} 
               color="orange" 
               active={activeStatFilter === 'Hold'} 
-              onClick={() => setActiveStatFilter('Hold')} 
+              onClick={() => { setActiveStatFilter('Hold'); setStatusFilter('all'); }} 
             />
             <StatCard 
-              title="Joinings" 
-              value={stats.joinings} 
-              color="emerald" 
-              active={activeStatFilter === 'Joinings'} 
-              onClick={() => setActiveStatFilter('Joinings')} 
+              title="Joined" 
+              value={stats.joined} 
+              color="green" 
+              active={activeStatFilter === 'Joined'} 
+              onClick={() => { setActiveStatFilter('Joined'); setStatusFilter('all'); }} 
             />
             <StatCard 
               title="Backout" 
               value={stats.backout} 
-              color="slate" 
+              color="red" 
               active={activeStatFilter === 'Backout'} 
-              onClick={() => setActiveStatFilter('Backout')} 
+              onClick={() => { setActiveStatFilter('Backout'); setStatusFilter('all'); }} 
             />
             <StatCard 
               title="Shared Profiles" 
               value={stats.sharedProfiles} 
               color="cyan" 
               active={activeStatFilter === 'Shared Profiles'} 
-              onClick={() => setActiveStatFilter('Shared Profiles')} 
+              onClick={() => { setActiveStatFilter('Shared Profiles'); setStatusFilter('all'); }} 
             />
           </div>
+
 
           <Card className="p-4 border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
@@ -666,8 +836,118 @@ export default function RecruiterCandidates() {
                         <td className="p-3 text-sm">{c.totalExperience} Yrs</td>
                         <td className="p-3 text-xs"><div>{c.ctc || '-'}</div><div className="text-green-600">{c.ectc || '-'}</div></td>
                         <td className="p-3 text-sm"><Badge variant="outline">{c.noticePeriod || '-'}</Badge></td>
-                        <td className="p-3"><Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge></td>
-                        <td className="p-3 text-xs text-slate-500 truncate max-w-[100px]">{c.remarks}</td>
+                        <td className="p-3">
+                          {statusEditingId === c._id ? (
+                            <div className="flex flex-col gap-2 w-full min-w-[200px]">
+                              {/* Level Dropdown */}
+                              <Select value={selectedLevel} onValueChange={handleStatusLevelSelect}>
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue placeholder="Select Level" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {interviewLevels.map(level => (
+                                    <SelectItem key={level} value={level}>{level}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+
+                              {/* Outcome Buttons - Appear Directly When Level is Selected */}
+                              {selectedLevel && (
+                                <div className="flex gap-1 animate-in fade-in zoom-in-95">
+                                  {interviewOutcomes.map(outcome => (
+                                    <Button
+                                      key={outcome}
+                                      size="sm"
+                                      variant={selectedOutcome === outcome ? "default" : "outline"}
+                                      className={`flex-1 h-7 text-xs transition-all ${
+                                        selectedOutcome === outcome
+                                          ? 'bg-blue-600 text-white'
+                                          : 'hover:bg-blue-100'
+                                      }`}
+                                      onClick={() => handleStatusOutcomeSelect(outcome)}
+                                    >
+                                      {outcome}
+                                    </Button>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Cancel Button */}
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                className="h-7 text-xs"
+                                onClick={() => {
+                                  setStatusEditingId(null);
+                                  setSelectedLevel('');
+                                  setSelectedOutcome('');
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between group">
+                              <Badge className={`${getStatusBadgeClass(c.status)} cursor-pointer`}>
+                                {statusEditingId === null && tempStatus === '' ? c.status : tempStatus}
+                              </Badge>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity ml-2"
+                                onClick={() => openStatusEditor(c._id, c.status)}
+                              >
+                                <Edit className="h-3 w-3 text-blue-600" />
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {remarksEditingId === c._id ? (
+                            <div className="flex flex-col gap-2 w-full min-w-[250px]">
+                              {/* Remarks Input Field */}
+                              <textarea
+                                value={editingRemarks}
+                                onChange={(e) => setEditingRemarks(e.target.value)}
+                                placeholder="Add remarks..."
+                                className="text-xs p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none h-16 dark:bg-slate-800 dark:border-slate-600 dark:text-white"
+                              />
+                              
+                              {/* Save and Cancel Buttons */}
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  className="flex-1 h-7 text-xs bg-green-600 hover:bg-green-700"
+                                  onClick={() => saveRemarks(c._id)}
+                                >
+                                  Save
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="flex-1 h-7 text-xs"
+                                  onClick={cancelRemarksEdit}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-start justify-between group cursor-pointer">
+                              <p className="text-xs text-slate-500 truncate max-w-[100px] hover:text-slate-700 transition-colors">
+                                {editingRemarks || c.remarks || '—'}
+                              </p>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity ml-2"
+                                onClick={() => openRemarksEditor(c._id, editingRemarks || c.remarks)}
+                              >
+                                <Edit className="h-3 w-3 text-blue-600" />
+                              </Button>
+                            </div>
+                          )}
+                        </td>
                         <td className="p-3 text-right">
                           <div className="flex justify-end gap-1">
                             <Button size="sm" variant="ghost" onClick={() => openViewDialog(c)}><Eye className="h-3.5 w-3.5"/></Button>
@@ -694,7 +974,7 @@ export default function RecruiterCandidates() {
                                         <p className="text-sm text-blue-600 font-mono">{getCandidateId(c)}</p>
                                     </div>
                                 </div>
-                                <Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge>
+                                <Badge className={getStatusBadgeClass(c.status)}>{c.status}</Badge>
                             </div>
                             <div className="space-y-2 text-sm text-slate-600">
                                 <div className="flex items-center gap-2"><Building className="h-4 w-4"/> {c.client}</div>
@@ -914,7 +1194,7 @@ export default function RecruiterCandidates() {
               <DialogTitle className="text-2xl flex items-center gap-3">
                 <Avatar className="h-10 w-10"><AvatarFallback className="bg-blue-600 text-white">{getInitials(viewingCandidate.name)}</AvatarFallback></Avatar>
                 {viewingCandidate.name} 
-                <Badge variant={getStatusBadgeVariant(viewingCandidate.status)} className="ml-auto">{viewingCandidate.status}</Badge>
+                <Badge className={`${getStatusBadgeClass(viewingCandidate.status)} ml-auto`}>{viewingCandidate.status}</Badge>
               </DialogTitle>
               <DialogDescription className="font-mono text-blue-600 text-sm">ID: {getCandidateId(viewingCandidate)}</DialogDescription>
             </DialogHeader>
@@ -997,10 +1277,97 @@ export default function RecruiterCandidates() {
   );
 }
 
-const StatCard = ({ title, value, color, active, onClick }: any) => (
-    <div onClick={onClick} className={`p-4 rounded-lg shadow-sm border border-l-4 border-l-${color}-500 bg-white ${active ? 'ring-2 ring-blue-500' : ''} cursor-pointer hover:bg-slate-50 transition-colors`}>
-        <div className="flex justify-between items-center">
-            <div><h3 className="text-2xl font-bold">{value}</h3><p className="text-sm text-slate-500">{title}</p></div>
+const StatCard = ({ title, value, color, active, onClick }: any) => {
+  const colorConfig: Record<string, { border: string; bg: string; activeBg: string; text: string; ring: string }> = {
+    blue: {
+      border: 'border-l-blue-500',
+      bg: 'bg-blue-50/40',
+      activeBg: 'from-blue-500/10 to-blue-400/5',
+      text: 'text-blue-700',
+      ring: 'ring-blue-300/50',
+    },
+    black: {
+      border: 'border-l-slate-900',
+      bg: 'bg-slate-50/40',
+      activeBg: 'from-slate-900/10 to-slate-700/5',
+      text: 'text-slate-900',
+      ring: 'ring-slate-400/50',
+    },
+    red: {
+      border: 'border-l-red-500',
+      bg: 'bg-red-50/40',
+      activeBg: 'from-red-500/10 to-red-400/5',
+      text: 'text-red-700',
+      ring: 'ring-red-300/50',
+    },
+    purple: {
+      border: 'border-l-purple-500',
+      bg: 'bg-purple-50/40',
+      activeBg: 'from-purple-500/10 to-purple-400/5',
+      text: 'text-purple-700',
+      ring: 'ring-purple-300/50',
+    },
+    green: {
+      border: 'border-l-green-500',
+      bg: 'bg-green-50/40',
+      activeBg: 'from-green-500/10 to-green-400/5',
+      text: 'text-green-700',
+      ring: 'ring-green-300/50',
+    },
+    orange: {
+      border: 'border-l-orange-500',
+      bg: 'bg-orange-50/40',
+      activeBg: 'from-orange-500/10 to-orange-400/5',
+      text: 'text-orange-700',
+      ring: 'ring-orange-300/50',
+    },
+    cyan: {
+      border: 'border-l-cyan-500',
+      bg: 'bg-cyan-50/40',
+      activeBg: 'from-cyan-500/10 to-cyan-400/5',
+      text: 'text-cyan-700',
+      ring: 'ring-cyan-300/50',
+    },
+  };
+
+  const config = colorConfig[color] || colorConfig.blue;
+
+  return (
+    <div 
+      onClick={onClick}
+      className={`
+        relative p-4 rounded-xl border border-l-4 ${config.border}
+        cursor-pointer transition-all duration-300 ease-out
+        ${active 
+          ? `bg-gradient-to-br ${config.activeBg} ring-2 ${config.ring} shadow-lg shadow-${color}-200/50 scale-105` 
+          : `bg-white hover:${config.bg} hover:shadow-md`
+        }
+        backdrop-blur-sm overflow-hidden group
+      `}
+    >
+      {/* Gradient overlay for active state */}
+      {active && (
+        <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-50 rounded-xl pointer-events-none" />
+      )}
+      
+      <div className="relative z-10 flex justify-between items-start">
+        <div>
+          <p className={`text-xs font-semibold uppercase tracking-wider ${active ? config.text : 'text-slate-500'} transition-colors duration-300`}>
+            {title}
+          </p>
+          <h3 className={`text-3xl font-bold mt-2 transition-all duration-300 ${active ? config.text : 'text-slate-900'}`}>
+            {value}
+          </h3>
         </div>
+        
+        {/* Visual indicator dot */}
+        {active && (
+          <div className={`w-2 h-2 rounded-full bg-gradient-to-br ${config.activeBg} animate-pulse`} />
+        )}
+      </div>
+      
+      {/* Bottom accent line */}
+      <div className={`absolute bottom-0 left-0 h-1 bg-gradient-to-r ${config.activeBg} transition-all duration-300 ${active ? 'w-full' : 'w-0 group-hover:w-1/3'}`} />
     </div>
-);
+  );
+};

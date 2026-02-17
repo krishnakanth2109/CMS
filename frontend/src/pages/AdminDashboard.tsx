@@ -3,12 +3,11 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { Users, UserCheck, Calendar, TrendingUp, ClipboardList, Briefcase, ChevronDown, Building, Bell, ArrowUpRight, ArrowDownRight, CalendarDays, Filter, X } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Candidate, Recruiter, Job } from '@/types'; 
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
@@ -344,15 +343,16 @@ export default function AdminDashboard() {
     });
   }, [jobs, startDate, endDate]);
 
-  // 3. Statistics Calculation
+  // 3. Statistics Calculation - FIXED: Added optional chaining for status checks
   const stats = useMemo(() => {
     const totalCandidates = dateFilteredCandidates.length;
     const activeRecruiters = recruiters.filter(r => r.active !== false).length;
     const totalJobs = dateFilteredJobs.length;
     const totalClients = clients.length;
 
+    // Use optional chaining (?.) or simple equality checks to prevent crashes if status is undefined
     const submitted = dateFilteredCandidates.filter(c => c.status === 'Submitted').length;
-    const interview = dateFilteredCandidates.filter(c => c.status.includes('Interview')).length;
+    const interview = dateFilteredCandidates.filter(c => c.status?.includes('Interview')).length;
     const offer = dateFilteredCandidates.filter(c => c.status === 'Offer').length;
     const joined = dateFilteredCandidates.filter(c => c.status === 'Joined').length;
 
@@ -366,12 +366,8 @@ export default function AdminDashboard() {
     };
   }, [dateFilteredCandidates, recruiters, dateFilteredJobs, clients]);
 
-  // 4. Recruiter Performance Stats - FIXED AND WORKING
+  // 4. Recruiter Performance Stats
   const recruiterStats: RecruiterStat[] = useMemo(() => {
-    console.log('Calculating recruiter stats...');
-    console.log('Total recruiters:', recruiters.length);
-    console.log('Total candidates:', dateFilteredCandidates.length);
-
     // Create a map of recruiter ID to name for easy lookup
     const recruiterMap = new Map();
     recruiters.forEach(recruiter => {
@@ -411,25 +407,17 @@ export default function AdminDashboard() {
         const stats = statsMap.get(recruiterId);
         stats.submissions++;
         
-        switch (candidate.status) {
-          case 'Submitted':
-          case 'Pending':
+        // Safety check for status
+        const status = candidate.status || '';
+
+        if (status === 'Submitted' || status === 'Pending') {
             stats.pending++;
-            break;
-          case 'Interview':
-          case 'L1 Interview':
-          case 'L2 Interview':
-            // Interview stats are tracked separately
-            break;
-          case 'Offer':
+        } else if (status === 'Offer') {
             stats.offers++;
-            break;
-          case 'Joined':
+        } else if (status === 'Joined') {
             stats.joined++;
-            break;
-          case 'Rejected':
+        } else if (status === 'Rejected') {
             stats.rejected++;
-            break;
         }
       }
     });
@@ -443,10 +431,7 @@ export default function AdminDashboard() {
     }));
 
     // Sort by submissions (descending)
-    const sortedStats = statsArray.sort((a, b) => b.submissions - a.submissions);
-    
-    console.log('Recruiter stats calculated:', sortedStats.length);
-    return sortedStats;
+    return statsArray.sort((a, b) => b.submissions - a.submissions);
   }, [dateFilteredCandidates, recruiters]);
 
   // 5. Chart Data
@@ -457,29 +442,21 @@ export default function AdminDashboard() {
     { name: 'Joined', value: stats.joined, color: '#059669' },
   ].filter(d => d.value > 0);
 
-  // Generate bar chart data - FIXED
+  // Generate bar chart data
   const barData = useMemo(() => {
-    console.log('Generating bar data from recruiter stats:', recruiterStats.length);
-    
     // Take top 6 recruiters for better display
     const topRecruiters = recruiterStats.slice(0, 6);
     
     // If no recruiter data, return empty array
-    if (topRecruiters.length === 0) {
-      console.log('No recruiter data for bar chart');
-      return [];
-    }
+    if (topRecruiters.length === 0) return [];
     
-    const data = topRecruiters.map(r => ({
+    return topRecruiters.map(r => ({
       name: r.name || 'Unknown',
       candidates: r.submissions || 0,
       fullName: r.fullName,
       successRate: r.successRate,
       joined: r.joined
     }));
-    
-    console.log('Bar chart data:', data);
-    return data;
   }, [recruiterStats]);
 
   const markAsRead = (id: string) => {
@@ -491,16 +468,12 @@ export default function AdminDashboard() {
   // Get user's first name or full name
   const getUserGreeting = () => {
     if (!user?.name) return "Welcome back!";
-    
-    // Extract first name
     const firstName = user.name.split(' ')[0];
     return `Welcome back, ${firstName}!`;
   };
 
   // Calculate trend data based on actual statistics
   const trendData = useMemo(() => {
-    // Calculate trends based on previous period if we have enough data
-    // For now, use fixed values as mock data
     return {
       candidates: 12,
       recruiters: 5,
@@ -568,7 +541,6 @@ export default function AdminDashboard() {
     return null;
   };
 
-  // Loading state
   if (loading) {
     return (
       <div className="flex min-h-screen bg-gray-100 dark:bg-gray-900">

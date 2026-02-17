@@ -24,15 +24,14 @@ import {
 } from '@/components/ui/select';
 import { 
   Search, Filter, Download, User, Phone, Mail, Building, 
-  Check, Plus, Edit, Eye, LayoutGrid, List, 
-  FileText, Trash2, MessageSquare, IndianRupee, UserCircle,
-  Loader2, Ban, Award, Calendar, X, MessageCircle, Users,
-  ArrowUpDown, ArrowUp, ArrowDown // Added icons for sorting
+  Plus, Edit, Eye, LayoutGrid, List, 
+  FileText, Loader2, Award, MessageCircle, Users,
+  ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { CandidateStatus, Candidate, Recruiter } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 
-// Env var
+// Env var configuration
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const BASE_URL = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : 'http://localhost:5000';
 
@@ -52,6 +51,39 @@ interface BackendCandidate extends Candidate {
   servingNoticePeriod?: boolean;
   noticePeriodDays?: string;
 }
+
+// Helper for StatCard
+interface StatCardProps {
+  title: string;
+  value: number;
+  color: string;
+  active?: boolean;
+  onClick?: () => void;
+}
+
+const StatCard = ({ title, value, color, active, onClick }: StatCardProps) => {
+    const colors: Record<string, string> = {
+        blue: 'border-l-blue-500 bg-gradient-to-r from-blue-50 to-white dark:from-blue-900/20 dark:to-slate-900',
+        green: 'border-l-green-500 bg-gradient-to-r from-green-50 to-white dark:from-green-900/20 dark:to-slate-900',
+        slate: 'border-l-slate-500 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/20 dark:to-slate-900',
+        orange: 'border-l-orange-500 bg-gradient-to-r from-orange-50 to-white dark:from-orange-900/20 dark:to-slate-900',
+        purple: 'border-l-purple-500 bg-gradient-to-r from-purple-50 to-white dark:from-purple-900/20 dark:to-slate-900',
+        teal: 'border-l-teal-500 bg-gradient-to-r from-teal-50 to-white dark:from-teal-900/20 dark:to-slate-900',
+        red: 'border-l-red-500 bg-gradient-to-r from-red-50 to-white dark:from-red-900/20 dark:to-slate-900'
+    };
+    
+    return (
+        <div 
+            onClick={onClick}
+            className={`p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 border-l-4 ${colors[color]} ${onClick ? 'cursor-pointer hover:shadow-md transition-all' : ''} ${active ? 'ring-2 ring-offset-2 ring-blue-500' : ''}`}
+        >
+            <div>
+                 <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{value}</h3>
+                 <p className="text-sm text-slate-500 dark:text-slate-400">{title}</p>
+            </div>
+        </div>
+    );
+};
 
 export default function AdminCandidates() {
   const { toast } = useToast();
@@ -136,7 +168,9 @@ export default function AdminCandidates() {
 
       if (resCand.ok) {
         const data = await resCand.json();
-        const mappedCandidates = data.map((c: any) => ({ ...c, id: c._id }));
+        // Ensure data is an array before mapping
+        const safeData = Array.isArray(data) ? data : [];
+        const mappedCandidates = safeData.map((c: any) => ({ ...c, id: c._id }));
         // Default sort by date added
         mappedCandidates.sort((a: any, b: any) => new Date(b.createdAt || b.dateAdded).getTime() - new Date(a.createdAt || a.dateAdded).getTime());
         setCandidates(mappedCandidates);
@@ -144,7 +178,7 @@ export default function AdminCandidates() {
 
       if (resRec.ok) {
         const data = await resRec.json();
-        setRecruiters(data.map((r: any) => ({ ...r, id: r._id })));
+        setRecruiters(Array.isArray(data) ? data.map((r: any) => ({ ...r, id: r._id })) : []);
       }
 
     } catch (error) {
@@ -212,12 +246,19 @@ export default function AdminCandidates() {
   const filteredCandidates = useMemo(() => {
     // 1. Filter
     let result = candidates.filter(c => {
-      const matchesSearch = c.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            c.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            (c.candidateId && c.candidateId.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                            c.client?.toLowerCase().includes(searchTerm.toLowerCase());
+      // Safe access using || '' to prevent .toLowerCase() or .includes() on undefined
+      const cName = c.name || '';
+      const cEmail = c.email || '';
+      const cCandId = c.candidateId || '';
+      const cClient = c.client || '';
+      const cStatus = c.status || '';
+
+      const matchesSearch = cName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            cEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            cCandId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            cClient.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
+      const matchesStatus = statusFilter === 'all' || cStatus === statusFilter;
       
       const cRecruiterId = (c.recruiterId && typeof c.recruiterId === 'object') 
         ? (c.recruiterId as any)._id 
@@ -227,9 +268,10 @@ export default function AdminCandidates() {
 
       let statCardMatch = true;
       if (activeStatFilter) {
-        if (activeStatFilter === 'submitted') statCardMatch = c.status === 'Submitted';
-        if (activeStatFilter === 'interview') statCardMatch = c.status.includes('Interview');
-        if (activeStatFilter === 'offer') statCardMatch = c.status === 'Offer';
+        // Safe check for status here to fix the crash
+        if (activeStatFilter === 'submitted') statCardMatch = cStatus === 'Submitted';
+        if (activeStatFilter === 'interview') statCardMatch = cStatus.includes('Interview');
+        if (activeStatFilter === 'offer') statCardMatch = cStatus === 'Offer';
         if (activeStatFilter === 'active') statCardMatch = c.active !== false;
       }
 
@@ -239,7 +281,7 @@ export default function AdminCandidates() {
     // 2. Sort
     if (sortConfig !== null) {
       result.sort((a, b) => {
-        // Safe access for candidateId
+        // Safe access for sorting
         const aValue = (sortConfig.key === 'candidateId' ? a.candidateId : (a as any)[sortConfig.key]) || '';
         const bValue = (sortConfig.key === 'candidateId' ? b.candidateId : (b as any)[sortConfig.key]) || '';
 
@@ -438,7 +480,9 @@ export default function AdminCandidates() {
     if (!c.contact) return;
     let phone = c.contact.replace(/\D/g, ''); 
     if (phone.length === 10) phone = '91' + phone;
-    const message = `Hi ${c.name.split(' ')[0]}, regarding your job application at ${c.client}.`;
+    const cName = c.name || 'Candidate';
+    const cClient = c.client || 'our client';
+    const message = `Hi ${cName.split(' ')[0]}, regarding your job application at ${cClient}.`;
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
@@ -447,10 +491,11 @@ export default function AdminCandidates() {
     toast({ title: "Copied ID", description: id });
   };
   
-  const getStatusBadgeVariant = (status: string) => {
-    if (status === 'Joined' || status === 'Offer') return 'default';
-    if (status === 'Rejected') return 'destructive';
-    if (status.includes('Interview')) return 'secondary';
+  const getStatusBadgeVariant = (status?: string) => {
+    const s = status || '';
+    if (s === 'Joined' || s === 'Offer') return 'default';
+    if (s === 'Rejected') return 'destructive';
+    if (s.includes('Interview')) return 'secondary';
     return 'outline';
   };
 
@@ -458,11 +503,12 @@ export default function AdminCandidates() {
   const getCandidateId = (c: BackendCandidate | null) => c?.candidateId || '...';
   const getSkillsText = (skills: string | string[] | undefined) => !skills ? 'N/A' : Array.isArray(skills) ? skills.join(', ') : skills;
 
+  // Safe access for stats
   const stats = useMemo(() => ({
     total: candidates.length,
     active: candidates.filter(c => c.active !== false).length,
     submitted: candidates.filter(c => c.status === 'Submitted').length,
-    interview: candidates.filter(c => c.status.includes('Interview')).length,
+    interview: candidates.filter(c => (c.status || '').includes('Interview')).length,
     offer: candidates.filter(c => c.status === 'Offer').length,
     joined: candidates.filter(c => c.status === 'Joined').length,
     rejected: candidates.filter(c => c.status === 'Rejected').length
@@ -951,36 +997,3 @@ export default function AdminCandidates() {
     </div>
   );
 }
-
-// Helper for StatCard
-interface StatCardProps {
-  title: string;
-  value: number;
-  color: string;
-  active?: boolean;
-  onClick?: () => void;
-}
-
-const StatCard = ({ title, value, color, active, onClick }: StatCardProps) => {
-    const colors: Record<string, string> = {
-        blue: 'border-l-blue-500 bg-gradient-to-r from-blue-50 to-white dark:from-blue-900/20 dark:to-slate-900',
-        green: 'border-l-green-500 bg-gradient-to-r from-green-50 to-white dark:from-green-900/20 dark:to-slate-900',
-        slate: 'border-l-slate-500 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/20 dark:to-slate-900',
-        orange: 'border-l-orange-500 bg-gradient-to-r from-orange-50 to-white dark:from-orange-900/20 dark:to-slate-900',
-        purple: 'border-l-purple-500 bg-gradient-to-r from-purple-50 to-white dark:from-purple-900/20 dark:to-slate-900',
-        teal: 'border-l-teal-500 bg-gradient-to-r from-teal-50 to-white dark:from-teal-900/20 dark:to-slate-900',
-        red: 'border-l-red-500 bg-gradient-to-r from-red-50 to-white dark:from-red-900/20 dark:to-slate-900'
-    };
-    
-    return (
-        <div 
-            onClick={onClick}
-            className={`p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 border-l-4 ${colors[color]} ${onClick ? 'cursor-pointer hover:shadow-md transition-all' : ''} ${active ? 'ring-2 ring-offset-2 ring-blue-500' : ''}`}
-        >
-            <div>
-                 <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{value}</h3>
-                 <p className="text-sm text-slate-500 dark:text-slate-400">{title}</p>
-            </div>
-        </div>
-    );
-};
