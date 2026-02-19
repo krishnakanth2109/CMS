@@ -23,7 +23,7 @@ import {
   Building, Briefcase, Loader2, Ban, List, LayoutGrid,
   Calendar, GraduationCap, Award, UserCircle, Star, Target, 
   MessageSquare, Linkedin, MessageCircle, Eye, IndianRupee, Upload, FileUp, FileText, X, CheckSquare,
-  Trash2, AlertTriangle // Added missing imports
+  Trash2, AlertTriangle, FileSpreadsheet // Added missing imports
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 // import { Candidate, Job } from '@/types'; // Assuming types exist, or using local interfaces below
@@ -146,6 +146,12 @@ export default function RecruiterCandidates() {
   // Delete State
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Import Excel State
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -570,6 +576,52 @@ export default function RecruiterCandidates() {
     }
   };
 
+  // --- Excel Import Handler ---
+  const handleImportExcel = async () => {
+    if (!importFile) {
+      toast({ title: 'No file selected', description: 'Please select an Excel file to import', variant: 'destructive' });
+      return;
+    }
+    setIsImporting(true);
+    setImportResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', importFile);
+      const response = await fetch(`${API_URL}/candidates/bulk-import`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
+        body: fd,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Import failed');
+
+      // Upsert response: { imported, created, updated, duplicates, total, errors[] }
+      const successCount = result.imported ?? 0;
+      const createdCount = result.created ?? successCount;
+      const updatedCount = result.updated ?? 0;
+      const failCount    = Math.max(0, (result.total ?? 0) - successCount);
+      const errorMessages = (result.errors || []).map((e: any) =>
+        typeof e === 'string' ? e : `Row ${e.row} (${e.candidate}): ${e.error}`
+      );
+
+      setImportResult({ success: successCount, failed: failCount, errors: errorMessages });
+
+      if (successCount > 0) {
+        const parts = [];
+        if (createdCount > 0) parts.push(`${createdCount} new added`);
+        if (updatedCount > 0) parts.push(`${updatedCount} existing updated`);
+        toast({ title: 'Import Successful', description: parts.join(', ') + '.' });
+        fetchData();
+      } else {
+        toast({ title: 'Nothing Imported', description: result.message || 'No candidates were added.', variant: 'destructive' });
+      }
+    } catch (error: any) {
+      toast({ title: 'Import Failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const handleWhatsApp = (c: BackendCandidate) => {
     if (!c.contact) return;
     let phone = c.contact.replace(/\D/g, ''); 
@@ -601,6 +653,9 @@ export default function RecruiterCandidates() {
               )}
               
               <Button variant="outline" onClick={handleExport}><Download className="mr-2 h-4 w-4"/> Export</Button>
+              <Button variant="outline" className="border-green-500 text-green-700 hover:bg-green-50" onClick={() => { setIsImportDialogOpen(true); setImportFile(null); setImportResult(null); }}>
+                <FileSpreadsheet className="mr-2 h-4 w-4"/> Import Excel
+              </Button>
               <Button className="bg-blue-600" onClick={() => { setFormData(initialFormState); setErrors({}); setIsAddDialogOpen(true); setIsCustomSource(false); }}>
                 <Plus className="mr-2 h-4 w-4"/> Add Candidate
               </Button>
@@ -1051,6 +1106,97 @@ export default function RecruiterCandidates() {
         </DialogContent>
       </Dialog>
       
+      {/* Import Excel Dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={(open) => { setIsImportDialogOpen(open); if (!open) { setImportFile(null); setImportResult(null); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5 text-green-600"/> Import Candidates from Excel</DialogTitle>
+            <DialogDescription>
+              Upload an Excel file (.xlsx / .xls) to bulk-import candidates. Download the template below to ensure the correct column format.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Template Download */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+              <p className="font-semibold mb-1">Required Excel Columns:</p>
+              <p className="text-xs text-blue-700 leading-relaxed">
+                name, email, contact, position, client, skills (comma-separated), totalExperience, ctc, ectc, noticePeriod, currentCompany, currentLocation, source, status
+              </p>
+              <Button
+                variant="link"
+                size="sm"
+                className="p-0 h-auto text-blue-600 mt-1"
+                onClick={() => {
+                  const headers = ['name','email','contact','position','client','skills','totalExperience','ctc','ectc','noticePeriod','currentCompany','currentLocation','source','status'];
+                  const exampleRow = ['John Doe','john@example.com','9876543210','Software Engineer','Acme Corp','React,Node.js','3','6 LPA','8 LPA','30 days','TCS','Bangalore','Portal','Submitted'];
+                  const csv = [headers.join(','), exampleRow.join(',')].join('\n');
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const a = document.createElement('a');
+                  a.href = URL.createObjectURL(blob);
+                  a.download = 'candidate_import_template.csv';
+                  a.click();
+                }}
+              >
+                ↓ Download Template (CSV)
+              </Button>
+            </div>
+
+            {/* File Upload */}
+            <div
+              className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:border-green-400 hover:bg-green-50 transition-colors"
+              onClick={() => document.getElementById('excel-import-input')?.click()}
+            >
+              <FileSpreadsheet className="h-10 w-10 text-slate-400 mx-auto mb-2" />
+              {importFile ? (
+                <div>
+                  <p className="font-semibold text-green-700">{importFile.name}</p>
+                  <p className="text-xs text-slate-500">{(importFile.size / 1024).toFixed(1)} KB</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-slate-600 font-medium">Click to choose Excel file</p>
+                  <p className="text-xs text-slate-400 mt-1">.xlsx or .xls, max 10MB</p>
+                </div>
+              )}
+              <input
+                id="excel-import-input"
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={(e) => { setImportFile(e.target.files?.[0] || null); setImportResult(null); }}
+              />
+            </div>
+
+            {/* Import Results */}
+            {importResult && (
+              <div className={`rounded-lg p-4 text-sm ${importResult.failed === 0 ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
+                <p className="font-semibold text-green-700">✅ {importResult.success} candidate(s) processed successfully</p>
+                {importResult.failed > 0 && (
+                  <div className="mt-2">
+                    <p className="font-semibold text-red-600">❌ {importResult.failed} rows failed</p>
+                    <ul className="mt-1 max-h-32 overflow-y-auto text-xs text-red-600 space-y-1">
+                      {importResult.errors.map((err, i) => <li key={i}>• {err}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsImportDialogOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              disabled={!importFile || isImporting}
+              onClick={handleImportExcel}
+            >
+              {isImporting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Importing...</> : <><FileSpreadsheet className="mr-2 h-4 w-4"/> Import Now</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* View Dialog Logic */}
       {viewingCandidate && (
         <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>

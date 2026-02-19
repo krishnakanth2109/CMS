@@ -273,14 +273,7 @@ export default function RecruiterAssignments() {
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Job Management</h1>
               <p className="text-gray-500 mt-1">Manage clients, post requirements, and assign recruiters</p>
             </div>
-            <div className="flex gap-3">
-               <Button variant="outline" onClick={() => setIsClientModalOpen(true)}>
-                 <BuildingOfficeIcon className="w-4 h-4 mr-2"/> Add Client
-               </Button>
-               <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={openCreateModal}>
-                 <PlusIcon className="w-4 h-4 mr-2"/> Post Requirement
-               </Button>
-            </div>
+     
           </div>
 
           <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
@@ -359,9 +352,7 @@ export default function RecruiterAssignments() {
                         <td className="p-4">{job.location}</td>
                         <td className="p-4">{getTatBadge(job.tatTime)}</td>
                         <td className="p-4 flex gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => openViewModal(job)}>
-                            <EyeIcon className="w-4 h-4 text-blue-600"/>
-                          </Button>
+                         
                           <Button variant="ghost" size="sm" onClick={() => { setJobToDelete(job); setDeleteDialogOpen(true); }}>
                             <TrashIcon className="w-4 h-4 text-red-600"/>
                           </Button>
