@@ -1,307 +1,325 @@
 import Candidate from '../models/Candidate.js';
-import mongoose from 'mongoose';
 import xlsx from 'xlsx';
 import fs from 'fs';
 
-// Helper: Find column by flexible matching
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Strict column finder — exact match first, then starts-with (≥5 chars).
+ * NO loose substring matching to prevent "Name" matching "clientname" etc.
+ */
 const findColumn = (rowKeys, ...possibleNames) => {
-  const normalized = possibleNames.map(n => n.toLowerCase().replace(/\s+/g, ''));
-  
+  const normalized = possibleNames.map(n => n.toLowerCase().replace(/[\s_]+/g, ''));
+
+  // Pass 1: Exact match
   for (const key of rowKeys) {
-    const keyNorm = key.toLowerCase().replace(/\s+/g, '');
-    
-    // Exact match
+    const keyNorm = key.toLowerCase().replace(/[\s_]+/g, '');
     if (normalized.includes(keyNorm)) return key;
-    
-    // Partial/substring match
-    for (const name of possibleNames) {
-      if (keyNorm.includes(name.toLowerCase().replace(/\s+/g, ''))) {
-        return key;
-      }
+  }
+
+  // Pass 2: Key starts-with a possible name that is ≥5 chars
+  for (const key of rowKeys) {
+    const keyNorm = key.toLowerCase().replace(/[\s_]+/g, '');
+    for (const name of normalized) {
+      if (name.length >= 5 && keyNorm.startsWith(name)) return key;
     }
   }
+
   return null;
 };
 
-// Helper: Extract and clean value
 const getValue = (row, columnKey) => {
   if (!columnKey || !(columnKey in row)) return '';
   const val = row[columnKey];
-  
-  // Handle scientific notation (Excel stores large numbers as 7.84E+09)
   if (typeof val === 'number') {
-    let str = val.toString();
-    if (str.includes('e') || str.includes('E')) {
-      const num = Number(val);
-      str = num.toFixed(0);
-    }
+    const str = val.toString();
+    if (str.toLowerCase().includes('e')) return Number(val).toFixed(0);
     return str;
   }
-  
-  return (val || '').toString().trim();
+  return (val ?? '').toString().trim();
 };
 
-// @desc    Bulk import candidates from Excel file
-// @route   POST /api/candidates/bulk-import
-// @access  Private
+const VALID_STATUSES = [
+  'Submitted', 'Shared Profiles', 'Yet to attend', 'Turnups',
+  'No Show', 'Selected', 'Joined', 'Rejected', 'Pipeline', 'Hold', 'Backout'
+];
+
+/**
+ * Get the next available CAND-XXXX number from the real DB.
+ * Always reads live from MongoDB — never gets out of sync.
+ */
+const getNextCandidateNumber = async () => {
+  const last = await Candidate.findOne(
+    { candidateId: { $regex: /^CAND-\d+$/ } },
+    { candidateId: 1 }
+  ).sort({ candidateId: -1 });
+
+  if (!last || !last.candidateId) return 1;
+  const num = parseInt(last.candidateId.split('-')[1], 10);
+  return isNaN(num) ? 1 : num + 1;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTROLLER
+// @route  POST /api/candidates/bulk-import
+// @access Private
+//
+// UPSERT:  existing email → UPDATE,  new email → CREATE
+//
+// ★ CRITICAL FIX: New candidates are saved SEQUENTIALLY (one by one), NOT
+//   in parallel (Promise.allSettled). This is the only safe way to guarantee
+//   unique auto-incrementing IDs, because parallel saves all read the same
+//   "last" ID from DB before any of them have written their new record.
+// ─────────────────────────────────────────────────────────────────────────────
 export const bulkImportCandidates = async (req, res) => {
-  let tempFilePath = req.file?.path;
-  console.log('bulkImportCandidates invoked');
-  console.log('Authenticated user present?', !!req.user, 'user id/name:', req.user ? `${req.user._id}/${req.user.name}` : 'none');
-  console.log('Uploaded tempFilePath:', tempFilePath);
+  const tempFilePath = req.file?.path;
+
+  console.log('=== BULK IMPORT START ===');
+  console.log('User:', req.user ? `${req.user._id} / ${req.user.name}` : 'NONE');
+  console.log('File:', tempFilePath);
 
   try {
     if (!req.file) {
-      return res.status(400).json({ success: false, message: 'No file uploaded' });
+      return res.status(400).json({ success: false, message: 'No file uploaded.' });
     }
 
-    // Read Excel file
+    // ── 1. Read workbook ──────────────────────────────────────────────────
     const fileBuffer = fs.readFileSync(tempFilePath);
-    const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    
-    const data = xlsx.utils.sheet_to_json(worksheet, { defval: '' });
+    const workbook   = xlsx.read(fileBuffer, { type: 'buffer' });
+    const sheetName  = workbook.SheetNames[0];
+    const worksheet  = workbook.Sheets[sheetName];
+    const data       = xlsx.utils.sheet_to_json(worksheet, { defval: '' });
 
     if (!data || data.length === 0) {
       if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-      return res.status(400).json({ success: false, message: 'Excel file is empty' });
+      return res.status(400).json({ success: false, message: 'Excel file is empty.' });
     }
 
     const rowKeys = Object.keys(data[0] || {});
-    console.log('=== EXCEL IMPORT ===');
-    console.log('Available columns:', rowKeys);
-    console.log('Total rows to process:', data.length);
+    console.log('Columns detected:', rowKeys);
+    console.log('Total data rows:', data.length);
 
-    // Find column keys
-    const contactCol = findColumn(rowKeys, 'contact', 'phone', 'mobile', 'no');
-    const nameCol = findColumn(rowKeys, 'name', 'candidate', 'full name');
-    const emailCol = findColumn(rowKeys, 'email', 'mail');
-    const clientCol = findColumn(rowKeys, 'client', 'company');
-    const positionCol = findColumn(rowKeys, 'position', 'job title', 'designation');
-    const locCol = findColumn(rowKeys, 'loc', 'location', 'city');
-    const expCol = findColumn(rowKeys, 'experience', 'exp', 'total exp');
-    const ctcCol = findColumn(rowKeys, 'current', 'ctc', 'current salary');
-    const ectcCol = findColumn(rowKeys, 'exp ctc', 'expected');
-    const noticeCol = findColumn(rowKeys, 'notice');
-    const feedbackCol = findColumn(rowKeys, 'feedback', 'remarks', 'comments');
-    const sourceCol = findColumn(rowKeys, 'source', 'reference');
+    // ── 2. Map columns ────────────────────────────────────────────────────
+    const cols = {
+      name     : findColumn(rowKeys, 'name', 'candidatename', 'fullname'),
+      email    : findColumn(rowKeys, 'email', 'emailid', 'mail'),
+      contact  : findColumn(rowKeys, 'contact', 'phone', 'mobile', 'mobileno', 'phoneno', 'contactno'),
+      position : findColumn(rowKeys, 'position', 'jobtitle', 'designation', 'role'),
+      // client — strict: only exact "client" variants, never "company" alone
+      client   : findColumn(rowKeys, 'client', 'clientname', 'clientcompany', 'hiringclient'),
+      skills   : findColumn(rowKeys, 'skills', 'skill', 'technologies', 'techstack'),
+      location : findColumn(rowKeys, 'currentlocation', 'location', 'city', 'loc'),
+      exp      : findColumn(rowKeys, 'totalexperience', 'totalexp', 'experience', 'yoe'),
+      relExp   : findColumn(rowKeys, 'relevantexperience', 'relevantexp', 'relexp'),
+      // ectc BEFORE ctc so "ECTC" / "Expected CTC" columns match ectc first
+      ectc     : findColumn(rowKeys, 'ectc', 'expectedctc', 'expectedsalary', 'expctc'),
+      ctc      : findColumn(rowKeys, 'ctc', 'currentctc', 'currentsalary'),
+      notice   : findColumn(rowKeys, 'noticeperiod', 'notice', 'np'),
+      remarks  : findColumn(rowKeys, 'remarks', 'feedback', 'comments', 'notes'),
+      source   : findColumn(rowKeys, 'source', 'reference'),
+      status   : findColumn(rowKeys, 'status'),
+      company  : findColumn(rowKeys, 'currentcompany', 'presentcompany', 'employer'),
+      education: findColumn(rowKeys, 'education', 'qualification', 'degree'),
+      gender   : findColumn(rowKeys, 'gender', 'sex'),
+      linkedin : findColumn(rowKeys, 'linkedin', 'linkedinurl', 'linkedinprofile'),
+    };
 
-    console.log('Mapped columns:', { contact: contactCol, name: nameCol, email: emailCol, client: clientCol, position: positionCol });
+    console.log('Column map:', cols);
 
-    // Map rows
-    const validCandidates = [];
+    // ── 3. Parse & validate rows ──────────────────────────────────────────
+    const validRows     = [];
     const mappingErrors = [];
 
     data.forEach((row, index) => {
+      const rowNum = index + 2;
       try {
-        const contactRaw = getValue(row, contactCol);
-        // Extract just the digits from contact - no length requirement
-        const contact = contactRaw.replace(/[^\d]/g, '');
-        const email = getValue(row, emailCol).toLowerCase().trim();
-        const name = getValue(row, nameCol).trim();
-        const position = getValue(row, positionCol).trim();
-        const client = getValue(row, clientCol).trim();
-        
-        // Validate before creating candidate
+        const name     = getValue(row, cols.name).trim();
+        const email    = getValue(row, cols.email).toLowerCase().trim();
+        const position = getValue(row, cols.position).trim();
+        const client   = getValue(row, cols.client).trim();
+
         if (!name || name.length < 2) {
-          mappingErrors.push({ 
-            row: index + 2, 
-            candidate: name || 'Unknown',
-            error: 'Name is required and must be at least 2 characters' 
-          });
+          mappingErrors.push({ row: rowNum, candidate: name || 'Unknown', error: '"name" is required (min 2 chars)' });
           return;
         }
-        
         if (!email || !email.includes('@')) {
-          mappingErrors.push({ 
-            row: index + 2, 
-            candidate: name,
-            error: 'Valid email is required' 
-          });
+          mappingErrors.push({ row: rowNum, candidate: name, error: '"email" must be valid' });
           return;
         }
-        
         if (!position) {
-          mappingErrors.push({ 
-            row: index + 2, 
-            candidate: name,
-            error: 'Position is required' 
-          });
+          mappingErrors.push({ row: rowNum, candidate: name, error: '"position" is required' });
           return;
         }
-        
         if (!client) {
-          mappingErrors.push({ 
-            row: index + 2, 
-            candidate: name,
-            error: 'Client is required' 
-          });
+          mappingErrors.push({ row: rowNum, candidate: name, error: '"client" is required — add a "Client" column to your Excel' });
           return;
         }
-        
-        const candidate = {
-          name: name,
-          email: email,
-          position: position,
-          client: client,
-          skills: [],
-          currentLocation: getValue(row, locCol) || '',
-          totalExperience: getValue(row, expCol) || '',
-          ctc: getValue(row, ctcCol) || '',
-          ectc: getValue(row, ectcCol) || '',
-          noticePeriod: getValue(row, noticeCol) || '',
-          remarks: getValue(row, feedbackCol) || '',
-          source: getValue(row, sourceCol) || 'Excel Import',
-          recruiterId: req.user._id,
-          recruiterName: req.user.name,
-          status: 'Submitted',
-          active: true,
-          dateAdded: new Date()
-        };
-        
-        // Only add contact if it has actual digits
-        if (contact && contact.length > 0) {
-          candidate.contact = contact;
-        }
 
-        // Log first 3 rows for debugging
-        if (index < 3) {
-          console.log(`\n--- Row ${index + 2} ---`);
-          console.log('Mapped candidate:', JSON.stringify(candidate, null, 2));
-        }
+        const contactRaw = getValue(row, cols.contact).replace(/[^\d]/g, '');
+        const contact    = contactRaw.length > 0 ? contactRaw : '0000000000';
 
-        validCandidates.push(candidate);
+        const skillsRaw = getValue(row, cols.skills);
+        const skills    = skillsRaw
+          ? skillsRaw.split(/[,;|]/).map(s => s.trim()).filter(Boolean)
+          : ['Not specified'];
+
+        const statusRaw    = getValue(row, cols.status);
+        const parsedStatus = statusRaw
+          ? statusRaw.split(/[,;|]/).map(s => s.trim()).filter(s => VALID_STATUSES.includes(s))
+          : [];
+        const status = parsedStatus.length > 0 ? parsedStatus : ['Submitted'];
+
+        validRows.push({
+          rowNum,
+          candidateData: {
+            name, email, contact, position, client, skills, status,
+            currentLocation   : getValue(row, cols.location)  || '',
+            totalExperience   : getValue(row, cols.exp)        || '',
+            relevantExperience: getValue(row, cols.relExp)     || '',
+            ctc               : getValue(row, cols.ctc)        || '',
+            ectc              : getValue(row, cols.ectc)       || '',
+            noticePeriod      : getValue(row, cols.notice)     || '',
+            remarks           : getValue(row, cols.remarks)    || '',
+            source            : getValue(row, cols.source)     || 'Excel Import',
+            currentCompany    : getValue(row, cols.company)    || '',
+            education         : getValue(row, cols.education)  || '',
+            gender            : getValue(row, cols.gender)     || '',
+            linkedin          : getValue(row, cols.linkedin)   || '',
+            recruiterId       : req.user._id,
+            recruiterName     : req.user.name,
+            active            : true,
+            dateAdded         : new Date(),
+          }
+        });
+
       } catch (err) {
-        console.error(`Row ${index + 2} processing error:`, err.message);
-        mappingErrors.push({ row: index + 2, candidate: 'Unknown', error: `Processing error: ${err.message}` });
+        console.error(`Row ${rowNum} parse error:`, err.message);
+        mappingErrors.push({ row: rowNum, candidate: 'Unknown', error: `Parse error: ${err.message}` });
       }
     });
 
-    console.log('Valid candidates:', validCandidates.length, 'Mapping errors:', mappingErrors.length);
+    console.log(`Validated: ${validRows.length} valid rows, ${mappingErrors.length} parse errors`);
 
-    if (validCandidates.length === 0) {
+    if (validRows.length === 0) {
       if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-      return res.status(400).json({ 
-        success: false, 
-        message: 'No valid rows found in Excel', 
-        details: mappingErrors.slice(0, 10)
+      return res.status(400).json({
+        success: false,
+        message: 'No valid rows found.',
+        errors : mappingErrors.slice(0, 20),
       });
     }
 
-    let insertedCount = 0;
-    let duplicateCount = 0;
+    // ── 4. Split into NEW vs EXISTING (by email) ──────────────────────────
+    const allEmails    = validRows.map(r => r.candidateData.email);
+    const existingDocs = await Candidate.find({ email: { $in: allEmails } }, { email: 1 });
+    const existingSet  = new Set(existingDocs.map(d => d.email.toLowerCase()));
 
-    // --- Reserve a block of candidateId sequence numbers atomically ---
-    try {
-      let CounterModel;
-      try {
-        CounterModel = mongoose.model('Counter');
-      } catch (e) {
-        const counterSchema = new mongoose.Schema({ _id: String, seq: { type: Number, default: 0 } });
-        CounterModel = mongoose.model('Counter', counterSchema);
+    const newRows    = validRows.filter(r => !existingSet.has(r.candidateData.email));
+    const updateRows = validRows.filter(r =>  existingSet.has(r.candidateData.email));
+
+    console.log(`New: ${newRows.length}, Existing to update: ${updateRows.length}`);
+
+    // ── 5a. CREATE new candidates — SEQUENTIALLY to guarantee unique IDs ──
+    //
+    //  ★ WHY SEQUENTIAL?
+    //    Promise.allSettled fires all saves at the same time.
+    //    Each save's pre-hook reads the DB for the "last" ID — but since
+    //    none of them have finished saving yet, they ALL read the same last ID
+    //    and all try to save CAND-0203, causing 8 duplicate key errors.
+    //
+    //    Saving one-at-a-time means each save completes and writes its ID to DB
+    //    before the next one reads the "last" ID, so each gets a unique number.
+    //
+    let createdCount = 0;
+
+    if (newRows.length > 0) {
+      // Read the real current max from DB ONCE before the loop
+      let nextNum = await getNextCandidateNumber();
+      console.log(`Starting candidateId from: CAND-${nextNum.toString().padStart(4, '0')}`);
+
+      for (const row of newRows) {
+        try {
+          // Pre-assign the ID so the pre-save hook skips generation
+          row.candidateData.candidateId = `CAND-${nextNum.toString().padStart(4, '0')}`;
+          nextNum++; // increment BEFORE saving so the next iteration is ready
+
+          const doc = new Candidate(row.candidateData);
+          await doc.save(); // ← await each one before moving to the next
+          createdCount++;
+          console.log(`✓ Created ${row.candidateData.candidateId} — ${row.candidateData.name}`);
+        } catch (err) {
+          const msg = err.message || String(err);
+          console.error(`✗ CREATE failed Row ${row.rowNum} (${row.candidateData.name}):`, msg);
+          mappingErrors.push({ row: row.rowNum, candidate: row.candidateData.name, error: `Create failed: ${msg}` });
+        }
       }
+    }
 
-      const batchSize = validCandidates.length;
-      const beforeCounter = await CounterModel.findById('candidateId');
-      console.log('Counter before update:', beforeCounter);
-      const counterDoc = await CounterModel.findOneAndUpdate(
-        { _id: 'candidateId' },
-        { $inc: { seq: batchSize } },
-        { new: true, upsert: true }
+    // ── 5b. UPDATE existing candidates (parallel is fine here) ───────────
+    let updatedCount = 0;
+
+    if (updateRows.length > 0) {
+      const updateResults = await Promise.allSettled(
+        updateRows.map(r => {
+          const { recruiterId, recruiterName, dateAdded, candidateId, active, ...updateFields } = r.candidateData;
+
+          // Drop empty strings/empty arrays so existing data isn't blanked
+          const cleanFields = Object.fromEntries(
+            Object.entries(updateFields).filter(([, v]) =>
+              v !== '' && !(Array.isArray(v) && v.length === 0)
+            )
+          );
+
+          return Candidate.findOneAndUpdate(
+            { email: r.candidateData.email },
+            { $set: cleanFields },
+            { new: true, runValidators: false }
+          );
+        })
       );
-      console.log('Counter after update:', counterDoc);
 
-      const finalSeq = counterDoc.seq || batchSize;
-      const startSeq = finalSeq - batchSize + 1;
-
-      // Assign candidateId to each valid candidate deterministically
-      validCandidates.forEach((c, i) => {
-        const seq = startSeq + i;
-        c.candidateId = `CAND-${seq.toString().padStart(4, '0')}`;
+      updateResults.forEach((result, idx) => {
+        if (result.status === 'fulfilled' && result.value) {
+          updatedCount++;
+          console.log(`✓ Updated — ${updateRows[idx].candidateData.name}`);
+        } else {
+          const msg  = result.reason?.message || 'Update failed';
+          const name = updateRows[idx].candidateData.name;
+          const rowN = updateRows[idx].rowNum;
+          console.error(`✗ UPDATE failed Row ${rowN} (${name}):`, msg);
+          mappingErrors.push({ row: rowN, candidate: name, error: `Update failed: ${msg}` });
+        }
       });
-
-      console.log('Reserved candidateId range:', `CAND-${startSeq.toString().padStart(4,'0')}`,
-        'to', `CAND-${finalSeq.toString().padStart(4,'0')}`);
-      console.log('Assigned candidateIds preview:', validCandidates.map(v => v.candidateId));
-    } catch (err) {
-      console.error('Failed to reserve candidateId block:', err);
-      // proceed without reservation; pre-save may still generate ids
     }
 
-    // Ensure every candidate has some candidateId (fallback unique assignment)
-    const fallbackBase = Date.now();
-    validCandidates.forEach((c, i) => {
-      if (!c.candidateId) {
-        c.candidateId = `CAND-${String(fallbackBase + i).slice(-8)}`;
-      }
-    });
-      console.log('Final assigned candidateIds (after fallback):', validCandidates.map(v => v.candidateId));
-    
-    // Debug: show full candidate objects just before save
-    console.log('Final candidate objects preview before save:', JSON.stringify(validCandidates.slice(0, 10), null, 2));
-
-    try {
-      console.log('Attempting to insert', validCandidates.length, 'candidates (one-by-one save)');
-
-      const results = await Promise.allSettled(validCandidates.map((c) => {
-        const doc = new Candidate(c);
-        return doc.save();
-      }));
-
-      const successes = results.filter(r => r.status === 'fulfilled').map((r) => r.value);
-      const failures = results.filter(r => r.status === 'rejected').map((r, idx) => ({
-        index: idx,
-        reason: r.reason
-      }));
-
-      insertedCount = successes.length;
-      console.log('Inserted count (per-row):', insertedCount, 'Failures:', failures.length);
-
-      // Collect duplicate count and mappingErrors for failures
-      failures.forEach(f => {
-        const reason = f.reason;
-        const message = reason && reason.message ? reason.message : String(reason);
-        const rowNumber = f.index + 2; // offset by header
-        mappingErrors.push({ row: rowNumber, candidate: validCandidates[f.index]?.name || 'Unknown', error: message });
-        if (/11000|E11000|duplicate/i.test(message)) duplicateCount += 1;
-        console.error(`Row ${rowNumber} insert failed:`, message);
-      });
-
-    } catch (error) {
-      console.error('Bulk save unexpected error:', error && error.message ? error.message : error);
-      // If something unexpected happened, ensure file clean up and return error
-      if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-      return res.status(500).json({ success: false, message: 'Critical error during import', error: error && error.message ? error.message : String(error) });
-    }
-
-    // Clean up file
+    // ── 6. Cleanup & respond ──────────────────────────────────────────────
     if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
 
-    res.json({
-      success: true,
-      message: `Import complete: ${insertedCount} added, ${duplicateCount} duplicates skipped.`,
-      imported: insertedCount,
-      duplicates: duplicateCount,
-      total: data.length,
-      errors: mappingErrors.length > 0 ? mappingErrors.slice(0, 10) : undefined
+    const totalProcessed = createdCount + updatedCount;
+    console.log(`=== DONE: ${createdCount} created, ${updatedCount} updated, ${mappingErrors.length} errors ===`);
+
+    return res.status(200).json({
+      success   : true,
+      message   : `Import complete: ${createdCount} new candidate(s) added, ${updatedCount} existing updated.`,
+      imported  : totalProcessed,
+      created   : createdCount,
+      updated   : updatedCount,
+      duplicates: updatedCount,
+      total     : data.length,
+      errors    : mappingErrors.length > 0 ? mappingErrors.slice(0, 50) : undefined,
     });
 
   } catch (error) {
-    console.error('Bulk import critical failure:', error);
-    console.error('Error details:', {
-      name: error.name,
-      message: error.message,
-      code: error.code
-    });
-    
-    if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-
-    res.status(500).json({
+    console.error('BULK IMPORT CRITICAL ERROR:', error);
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try { fs.unlinkSync(tempFilePath); } catch (_) {}
+    }
+    return res.status(500).json({
       success: false,
-      message: 'Critical error during import',
-      error: error.message,
-      details: error.code ? `DB Error: ${error.code}` : undefined
+      message: 'Critical server error during import.',
+      error  : error.message,
     });
   }
 };

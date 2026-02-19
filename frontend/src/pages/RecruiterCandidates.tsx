@@ -23,10 +23,9 @@ import {
   Building, Briefcase, Loader2, Ban, List, LayoutGrid,
   Calendar, GraduationCap, Award, UserCircle, Star, Target, 
   MessageSquare, Linkedin, MessageCircle, Eye, IndianRupee, Upload, FileUp, FileText, X, CheckSquare,
-  Trash2, AlertTriangle // Added missing imports
+  Trash2, AlertTriangle, FileSpreadsheet
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-// import { Candidate, Job } from '@/types'; // Assuming types exist, or using local interfaces below
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -49,7 +48,7 @@ interface BackendCandidate {
   source?: string;
   status?: string[] | string; 
   rating?: number;
-  assignedJobId?: string | { _id: string, name: string, position?: string, clientName?: string }; // Adjusted for populated fields
+  assignedJobId?: string | { _id: string, name: string, position?: string, clientName?: string };
   active?: boolean;
   dateAdded?: string;
   createdAt?: string;
@@ -61,6 +60,7 @@ interface BackendCandidate {
   offersInHand?: boolean;
   offerPackage?: string;
   servingNoticePeriod?: boolean;
+  isNegotiable?: string; // New field
   noticePeriodDays?: string;
   ctc?: string;
   ectc?: string;
@@ -70,6 +70,8 @@ interface BackendCandidate {
   client?: string;
   relevantExperience?: string | number;
   totalExperience?: string | number;
+  currentTakeHome?: string;
+  expectedTakeHome?: string;
 }
 
 interface BackendJob {
@@ -92,10 +94,11 @@ interface CandidateFormData {
   education: string;
   ctc: string; ectc: string; 
   takeHomeSalary: string;
-  currentTakeHome?: string; // Added to interface
-  expectedTakeHome?: string; // Added to interface
+  currentTakeHome: string; // Mandatory
+  expectedTakeHome: string; // Mandatory
   noticePeriod: string;
   servingNoticePeriod: string;
+  isNegotiable: string; // New Logic
   noticePeriodDays: string;
   offersInHand: string;
   offerPackage: string;
@@ -126,16 +129,6 @@ export default function RecruiterCandidates() {
   const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null); 
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
   
-  // Status Update Cascading Dropdown
-  const [statusEditingId, setStatusEditingId] = useState<string | null>(null);
-  const [selectedLevel, setSelectedLevel] = useState<string>('');
-  const [selectedOutcome, setSelectedOutcome] = useState<string>('');
-  const [tempStatus, setTempStatus] = useState<string>('');
-  
-  // Remarks Inline Editing
-  const [remarksEditingId, setRemarksEditingId] = useState<string | null>(null);
-  const [editingRemarks, setEditingRemarks] = useState<string>('');
-  
   // Dialogs
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -146,6 +139,12 @@ export default function RecruiterCandidates() {
   // Delete State
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Import Excel State
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -178,6 +177,7 @@ export default function RecruiterCandidates() {
     expectedTakeHome: '',
     noticePeriod: '',
     servingNoticePeriod: 'false',
+    isNegotiable: 'No',
     noticePeriodDays: '',
     offersInHand: 'false',
     offerPackage: '',
@@ -199,11 +199,6 @@ export default function RecruiterCandidates() {
     const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
     if (!allowedTypes.includes(file.type)) {
       toast({ title: 'Invalid File Type', description: 'Please upload a PDF or DOC/DOCX file', variant: 'destructive' });
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: 'File Too Large', description: 'Resume must be less than 5MB', variant: 'destructive' });
       return;
     }
 
@@ -275,7 +270,6 @@ export default function RecruiterCandidates() {
 
         myCandidates.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-        // Ensure status is treated as array even if legacy data is string
         const fixedCandidates = myCandidates.map((c: any) => ({
             ...c,
             status: Array.isArray(c.status) ? c.status : [c.status || 'Submitted']
@@ -317,14 +311,26 @@ export default function RecruiterCandidates() {
       newValue = value.replace(/\D/g, ''); 
       if (newValue.length > 10) return; 
     }
-    if (['totalExperience', 'relevantExperience', 'ctc', 'ectc', 'takeHomeSalary', 'currentTakeHome', 'expectedTakeHome'].includes(key)) {
+    if (['totalExperience', 'relevantExperience', 'ctc', 'ectc', 'currentTakeHome', 'expectedTakeHome'].includes(key)) {
        if (!/^\d*\.?\d*$/.test(value)) return;
     }
-    setFormData(prev => ({ ...prev, [key]: newValue }));
+    
+    setFormData(prev => {
+        const updated = { ...prev, [key]: newValue };
+        // Cleanup logic for nested Serving Notice
+        if (key === 'servingNoticePeriod' && newValue === 'false') {
+            updated.isNegotiable = 'No';
+            updated.noticePeriodDays = '';
+        }
+        if (key === 'isNegotiable' && newValue === 'No') {
+            updated.noticePeriodDays = '';
+        }
+        return updated;
+    });
+
     if (errors[key]) setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
   };
 
-  // --- UPDATED Status Handlers with "Select All" Logic ---
   const addStatus = (newStatus: string) => {
     if (newStatus === 'SELECT_ALL') {
       setFormData(prev => ({ ...prev, status: [...allStatuses] }));
@@ -342,6 +348,7 @@ export default function RecruiterCandidates() {
     }));
   };
 
+  // --- REVISED VALIDATION FORM ---
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     const data = formData;
@@ -353,17 +360,28 @@ export default function RecruiterCandidates() {
     if (!data.contact.trim()) newErrors.contact = "Phone is required";
     else if (data.contact.length !== 10) newErrors.contact = "Phone must be exactly 10 digits";
 
-    if (!data.position.trim()) newErrors.position = "Position is required";
-    if (!data.client.trim()) newErrors.client = "Client is required";
     if (!data.skills.toString().trim()) newErrors.skills = "Skills are required";
 
     if (isCustomSource && !data.source.trim()) newErrors.source = "Please specify source";
+    
+    // Updated Mandatory Fields
+    if (!data.currentTakeHome.trim()) newErrors.currentTakeHome = "Required";
+    if (!data.expectedTakeHome.trim()) newErrors.expectedTakeHome = "Required";
+    if (!data.education.trim()) newErrors.education = "Qualification is required";
+    if (!data.source.trim()) newErrors.source = "Source is required";
+    if (data.status.length === 0) newErrors.status = "Status is required";
+    if (!data.dateAdded) newErrors.dateAdded = "Date Added is required";
+    if (!data.gender) newErrors.gender = "Gender is required";
+    if (!data.currentLocation.trim()) newErrors.currentLocation = "Location is required";
+    if (!data.servingNoticePeriod) newErrors.servingNoticePeriod = "Notice Status required";
 
-    if (data.servingNoticePeriod === 'true' && !data.noticePeriodDays.trim()) newErrors.noticePeriodDays = "Please specify days";
+    // Conditional Mandatory
+    if (data.servingNoticePeriod === 'true' && data.isNegotiable === 'Yes' && !data.noticePeriodDays.trim()) {
+       newErrors.noticePeriodDays = "Days required";
+    }
+
     if (data.offersInHand === 'true' && !data.offerPackage.trim()) newErrors.offerPackage = "Please specify package amount";
     
-    if (data.status.length === 0) newErrors.status = "At least one status is required";
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -483,6 +501,7 @@ export default function RecruiterCandidates() {
       expectedTakeHome: '',
       noticePeriod: c.noticePeriod ? String(c.noticePeriod) : '',
       servingNoticePeriod: c.servingNoticePeriod ? 'true' : 'false',
+      isNegotiable: c.isNegotiable || 'No',
       noticePeriodDays: c.noticePeriodDays || '',
       offersInHand: c.offersInHand ? 'true' : 'false',
       offerPackage: c.offerPackage || '',
@@ -570,6 +589,52 @@ export default function RecruiterCandidates() {
     }
   };
 
+  // --- Excel Import Handler ---
+  const handleImportExcel = async () => {
+    if (!importFile) {
+      toast({ title: 'No file selected', description: 'Please select an Excel file to import', variant: 'destructive' });
+      return;
+    }
+    setIsImporting(true);
+    setImportResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', importFile);
+      const response = await fetch(`${API_URL}/candidates/bulk-import`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('authToken')}` },
+        body: fd,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Import failed');
+
+      // Upsert response: { imported, created, updated, duplicates, total, errors[] }
+      const successCount = result.imported ?? 0;
+      const createdCount = result.created ?? successCount;
+      const updatedCount = result.updated ?? 0;
+      const failCount    = Math.max(0, (result.total ?? 0) - successCount);
+      const errorMessages = (result.errors || []).map((e: any) =>
+        typeof e === 'string' ? e : `Row ${e.row} (${e.candidate}): ${e.error}`
+      );
+
+      setImportResult({ success: successCount, failed: failCount, errors: errorMessages });
+
+      if (successCount > 0) {
+        const parts = [];
+        if (createdCount > 0) parts.push(`${createdCount} new added`);
+        if (updatedCount > 0) parts.push(`${updatedCount} existing updated`);
+        toast({ title: 'Import Successful', description: parts.join(', ') + '.' });
+        fetchData();
+      } else {
+        toast({ title: 'Nothing Imported', description: result.message || 'No candidates were added.', variant: 'destructive' });
+      }
+    } catch (error: any) {
+      toast({ title: 'Import Failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const handleWhatsApp = (c: BackendCandidate) => {
     if (!c.contact) return;
     let phone = c.contact.replace(/\D/g, ''); 
@@ -601,6 +666,9 @@ export default function RecruiterCandidates() {
               )}
               
               <Button variant="outline" onClick={handleExport}><Download className="mr-2 h-4 w-4"/> Export</Button>
+              <Button variant="outline" className="border-green-500 text-green-700 hover:bg-green-50" onClick={() => { setIsImportDialogOpen(true); setImportFile(null); setImportResult(null); }}>
+                <FileSpreadsheet className="mr-2 h-4 w-4"/> Import Excel
+              </Button>
               <Button className="bg-blue-600" onClick={() => { setFormData(initialFormState); setErrors({}); setIsAddDialogOpen(true); setIsCustomSource(false); }}>
                 <Plus className="mr-2 h-4 w-4"/> Add Candidate
               </Button>
@@ -877,9 +945,9 @@ export default function RecruiterCandidates() {
               
               <div className="space-y-2"><Label>Date of Birth</Label><Input type="date" value={formData.dateOfBirth} onChange={e => handleInputChange('dateOfBirth', e.target.value)}/></div>
               <div className="space-y-2">
-                <Label>Gender</Label>
+                <Label className={errors.gender ? "text-red-500" : ""}>Gender *</Label>
                 <Select value={formData.gender} onValueChange={val => handleInputChange('gender', val)}>
-                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectTrigger className={errors.gender ? "border-red-500" : ""}><SelectValue placeholder="Select" /></SelectTrigger>
                     <SelectContent><SelectItem value="Male">Male</SelectItem><SelectItem value="Female">Female</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent>
                 </Select>
               </div>
@@ -887,27 +955,29 @@ export default function RecruiterCandidates() {
                 <Label>LinkedIn</Label>
                 <div className="relative"><Linkedin className="absolute left-2 top-2.5 h-4 w-4 text-slate-400"/><Input className="pl-8" value={formData.linkedin} onChange={e => handleInputChange('linkedin', e.target.value)} placeholder="Profile URL"/></div>
               </div>
-              <div className="space-y-2"><Label>Current Location</Label><Input value={formData.currentLocation} onChange={e => handleInputChange('currentLocation', e.target.value)}/></div>
+              <div className="space-y-2">
+                <Label className={errors.currentLocation ? "text-red-500" : ""}>Current Location *</Label>
+                <Input value={formData.currentLocation} onChange={e => handleInputChange('currentLocation', e.target.value)} className={errors.currentLocation ? "border-red-500" : ""}/>
+              </div>
               <div className="space-y-2"><Label>Preferred Location</Label><Input value={formData.preferredLocation} onChange={e => handleInputChange('preferredLocation', e.target.value)}/></div>
 
               <div className="md:col-span-3 font-semibold border-b pb-1 text-slate-500 mt-4 flex items-center gap-2"><Briefcase className="h-4 w-4"/> Professional Information</div>
               
+              {/* Position and Client (Not Required) */}
               <div className="space-y-2">
-                <Label className={errors.position ? "text-red-500" : ""}>Position *</Label>
+                <Label>Position</Label>
                 <Select value={formData.position} onValueChange={(val) => handleInputChange('position', val)}>
-                    <SelectTrigger className={errors.position ? "border-red-500" : ""}><SelectValue placeholder="Select Position" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Select Position" /></SelectTrigger>
                     <SelectContent>{uniquePositions.map((pos) => (<SelectItem key={pos} value={pos}>{pos}</SelectItem>))}</SelectContent>
                 </Select>
-                {errors.position && <span className="text-xs text-red-500">{errors.position}</span>}
               </div>
 
               <div className="space-y-2">
-                <Label className={errors.client ? "text-red-500" : ""}>Client *</Label>
+                <Label>Client</Label>
                 <Select value={formData.client} onValueChange={(val) => handleInputChange('client', val)}>
-                    <SelectTrigger className={errors.client ? "border-red-500" : ""}><SelectValue placeholder="Select Client" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Select Client" /></SelectTrigger>
                     <SelectContent>{clients.map((client) => (<SelectItem key={client._id} value={client.companyName}>{client.companyName}</SelectItem>))}</SelectContent>
                 </Select>
-                {errors.client && <span className="text-xs text-red-500">{errors.client}</span>}
               </div>
 
               <div className="space-y-2"><Label>Current Company</Label><Input value={formData.currentCompany} onChange={e => handleInputChange('currentCompany', e.target.value)}/></div>
@@ -919,31 +989,75 @@ export default function RecruiterCandidates() {
               </div>
 
               <div className="md:col-span-3 font-semibold text-slate-500 border-b pb-1 mt-4 flex items-center gap-2"><GraduationCap className="h-4 w-4"/> Education</div>
-              <div className="md:col-span-3 space-y-1"><Label>Qualification</Label><Input value={formData.education} onChange={e => handleInputChange('education', e.target.value)} placeholder="e.g. B.Tech from IIT Delhi"/></div>
+              <div className="md:col-span-3 space-y-1">
+                 <Label className={errors.education ? "text-red-500" : ""}>Qualification *</Label>
+                 <Input value={formData.education} onChange={e => handleInputChange('education', e.target.value)} className={errors.education ? "border-red-500" : ""} placeholder="e.g. B.Tech from IIT Delhi"/>
+              </div>
 
               <div className="md:col-span-3 font-semibold text-slate-500 border-b pb-1 mt-4 flex items-center gap-2"><IndianRupee className="h-4 w-4"/> Experience & Pay</div>
               <div className="space-y-2"><Label>Total Exp (Yrs)</Label><Input value={formData.totalExperience} onChange={e => handleInputChange('totalExperience', e.target.value)} placeholder="Numbers only"/></div>
               <div className="space-y-2"><Label>Relevant Exp (Yrs)</Label><Input value={formData.relevantExperience} onChange={e => handleInputChange('relevantExperience', e.target.value)} placeholder="Numbers only"/></div>
               
+              {/* CTC: Light text for units, Bold for Label, Not Required */}
               <div className="space-y-2">
-                 <Label>Serving Notice?</Label>
+                 <Label className="font-bold">Current CTC <span className="font-normal text-slate-500">(Lakhs)</span></Label>
+                 <Input value={formData.ctc} onChange={e => handleInputChange('ctc', e.target.value)} placeholder="Numbers only"/>
+              </div>
+              <div className="space-y-2">
+                 <Label className="font-bold">Expected CTC <span className="font-normal text-slate-500">(Lakhs)</span></Label>
+                 <Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)} placeholder="Numbers only"/>
+              </div>
+               
+              {/* Take Home: Light text for units, Bold for Label, Required */}
+              <div className="space-y-2">
+                 <Label className={errors.currentTakeHome ? "text-red-500 font-bold" : "font-bold"}>
+                   Current Take Home <span className="font-normal text-slate-500">(Thousands)</span> *
+                 </Label>
+                 <Input 
+                   value={formData.currentTakeHome} 
+                   onChange={e => handleInputChange('currentTakeHome', e.target.value)} 
+                   className={errors.currentTakeHome ? "border-red-500" : ""}
+                   placeholder="Numbers only"
+                  />
+               </div>
+               <div className="space-y-2">
+                 <Label className={errors.expectedTakeHome ? "text-red-500 font-bold" : "font-bold"}>
+                   Expected Take Home <span className="font-normal text-slate-500">(Thousands)</span> *
+                 </Label>
+                 <Input 
+                   value={formData.expectedTakeHome} 
+                   onChange={e => handleInputChange('expectedTakeHome', e.target.value)} 
+                   className={errors.expectedTakeHome ? "border-red-500" : ""}
+                   placeholder="Numbers only"
+                  />
+               </div>
+
+              {/* Notice Logic: 3 Levels */}
+              <div className="space-y-2">
+                 <Label className={errors.servingNoticePeriod ? "text-red-500" : ""}>Serving Notice *</Label>
                  <Select value={formData.servingNoticePeriod} onValueChange={(val) => handleInputChange('servingNoticePeriod', val)}>
-                     <SelectTrigger><SelectValue/></SelectTrigger>
+                     <SelectTrigger className={errors.servingNoticePeriod ? "border-red-500" : ""}><SelectValue/></SelectTrigger>
                      <SelectContent><SelectItem value="false">No</SelectItem><SelectItem value="true">Yes</SelectItem></SelectContent>
                  </Select>
               </div>
 
               {formData.servingNoticePeriod === 'true' && (
                 <div className="space-y-2 animate-in fade-in zoom-in-95">
-                    <Label className={errors.noticePeriodDays ? "text-red-500" : ""}>Days Remaining *</Label>
-                    <Input value={formData.noticePeriodDays} onChange={e => handleInputChange('noticePeriodDays', e.target.value)} placeholder="e.g. 30" />
-                    {errors.noticePeriodDays && <span className="text-xs text-red-500">{errors.noticePeriodDays}</span>}
+                    <Label>Negotiable</Label>
+                    <Select value={formData.isNegotiable} onValueChange={(val) => handleInputChange('isNegotiable', val)}>
+                        <SelectTrigger><SelectValue/></SelectTrigger>
+                        <SelectContent><SelectItem value="No">No</SelectItem><SelectItem value="Yes">Yes</SelectItem></SelectContent>
+                    </Select>
                 </div>
               )}
 
-              <div className="space-y-2"><Label>Current CTC (Lakhs)</Label><Input value={formData.ctc} onChange={e => handleInputChange('ctc', e.target.value)} placeholder="Numbers only"/></div>
-              <div className="space-y-2"><Label>Expected CTC (Lakhs)</Label><Input value={formData.ectc} onChange={e => handleInputChange('ectc', e.target.value)} placeholder="Numbers only"/></div>
-              
+              {formData.servingNoticePeriod === 'true' && formData.isNegotiable === 'Yes' && (
+                <div className="space-y-2 animate-in fade-in zoom-in-95">
+                    <Label className={errors.noticePeriodDays ? "text-red-500" : ""}>Days Remaining *</Label>
+                    <Input value={formData.noticePeriodDays} onChange={e => handleInputChange('noticePeriodDays', e.target.value)} className={errors.noticePeriodDays ? "border-red-500" : ""} placeholder="e.g. 30" />
+                </div>
+              )}
+
               <div className="space-y-2">
                   <Label>Offers in Hand?</Label>
                   <Select value={formData.offersInHand} onValueChange={(val) => handleInputChange('offersInHand', val)}>
@@ -952,25 +1066,6 @@ export default function RecruiterCandidates() {
                   </Select>
                </div>
                
-               <div className="space-y-2">
-                 <Label> Current Take Home (Thousands)</Label>
-                 <Input 
-                   value={formData.currentTakeHome} 
-                   onChange={e => handleInputChange('currentTakeHome', e.target.value)} 
-                   placeholder="Numbers only"
-                  />
-               </div>
-               <div className="space-y-2">
-                 <Label> Expected Take Home (Thousands)</Label>
-                 <Input 
-                   value={formData.expectedTakeHome} 
-                   onChange={e => handleInputChange('expectedTakeHome', e.target.value)} 
-                   placeholder="Numbers only"
-                  />
-               </div>
-               <div className="space-y-2"><Label>Reason For Change</Label><Textarea value={formData.notes} onChange={e => handleInputChange('notes', e.target.value)} className="w-full border rounded-md p-2 h-10 text-sm"
-  placeholder="Reason for changing"/></div>
-
                {formData.offersInHand === 'true' && (
                  <div className="space-y-2 animate-in fade-in zoom-in-95">
                     <Label className={errors.offerPackage ? "text-red-500" : ""}>Package Amount *</Label>
@@ -978,12 +1073,14 @@ export default function RecruiterCandidates() {
                     {errors.offerPackage && <span className="text-xs text-red-500">{errors.offerPackage}</span>}
                  </div>
                )}
+               
+               <div className="space-y-2"><Label>Reason For Change</Label><Textarea value={formData.notes} onChange={e => handleInputChange('notes', e.target.value)} className="w-full border rounded-md p-2 h-10 text-sm" placeholder="Reason for changing"/></div>
 
               <div className="md:col-span-3 font-semibold text-slate-500 border-b pb-1 mt-4 flex items-center gap-2"><Target className="h-4 w-4"/> Recruitment Details</div>
               <div className="space-y-2">
-                 <Label>Source</Label>
+                 <Label className={errors.source ? "text-red-500" : ""}>Source *</Label>
                  <Select value={isCustomSource ? 'Other' : formData.source} onValueChange={v => { if(v==='Other'){setIsCustomSource(true);handleInputChange('source','')}else{setIsCustomSource(false);handleInputChange('source',v)} }}>
-                    <SelectTrigger><SelectValue placeholder="Source"/></SelectTrigger>
+                    <SelectTrigger className={errors.source ? "border-red-500" : ""}><SelectValue placeholder="Source"/></SelectTrigger>
                     <SelectContent>{standardSources.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}<SelectItem value="Other">Other</SelectItem></SelectContent>
                  </Select>
                  {isCustomSource && <Input className="mt-1" value={formData.source} onChange={e => handleInputChange('source', e.target.value)} placeholder="Enter Source"/>}
@@ -998,7 +1095,7 @@ export default function RecruiterCandidates() {
 
               {/* --- UPDATED: Status Multi-Select --- */}
               <div className="space-y-2">
-                <Label className={errors.status ? "text-red-500" : ""}>Status (Multi-select)</Label>
+                <Label className={errors.status ? "text-red-500" : ""}>Status (Multi-select) *</Label>
                 
                 {/* Box showing selected options */}
                 <div className={`border rounded-md p-2 min-h-[42px] flex flex-wrap gap-2 bg-white dark:bg-slate-900 ${errors.status ? 'border-red-500' : ''}`}>
@@ -1041,7 +1138,10 @@ export default function RecruiterCandidates() {
               </div>
               
               <div className="space-y-2"><Label>Rating</Label><Select value={formData.rating} onValueChange={v => handleInputChange('rating', v)}><SelectTrigger><SelectValue placeholder="Rate"/></SelectTrigger><SelectContent>{[1,2,3,4,5].map(r=><SelectItem key={r} value={r.toString()}>{r} Stars</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-2"><Label>Date Added</Label><Input type="date" value={formData.dateAdded} onChange={e => handleInputChange('dateAdded', e.target.value)}/></div>
+              <div className="space-y-2">
+                  <Label className={errors.dateAdded ? "text-red-500" : ""}>Date Added *</Label>
+                  <Input type="date" value={formData.dateAdded} onChange={e => handleInputChange('dateAdded', e.target.value)} className={errors.dateAdded ? "border-red-500" : ""}/>
+              </div>
               <div className="md:col-span-3 space-y-2 mt-2"><Label>Remarks</Label><Textarea value={formData.remarks} onChange={e => handleInputChange('remarks', e.target.value)}/></div>
             </div>
             <DialogFooter>
@@ -1051,6 +1151,97 @@ export default function RecruiterCandidates() {
         </DialogContent>
       </Dialog>
       
+      {/* Import Excel Dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={(open) => { setIsImportDialogOpen(open); if (!open) { setImportFile(null); setImportResult(null); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5 text-green-600"/> Import Candidates from Excel</DialogTitle>
+            <DialogDescription>
+              Upload an Excel file (.xlsx / .xls) to bulk-import candidates. Download the template below to ensure the correct column format.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Template Download */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+              <p className="font-semibold mb-1">Required Excel Columns:</p>
+              <p className="text-xs text-blue-700 leading-relaxed">
+                name, email, contact, position, client, skills (comma-separated), totalExperience, ctc, ectc, noticePeriod, currentCompany, currentLocation, source, status
+              </p>
+              <Button
+                variant="link"
+                size="sm"
+                className="p-0 h-auto text-blue-600 mt-1"
+                onClick={() => {
+                  const headers = ['name','email','contact','position','client','skills','totalExperience','ctc','ectc','noticePeriod','currentCompany','currentLocation','source','status'];
+                  const exampleRow = ['John Doe','john@example.com','9876543210','Software Engineer','Acme Corp','React,Node.js','3','6 LPA','8 LPA','30 days','TCS','Bangalore','Portal','Submitted'];
+                  const csv = [headers.join(','), exampleRow.join(',')].join('\n');
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const a = document.createElement('a');
+                  a.href = URL.createObjectURL(blob);
+                  a.download = 'candidate_import_template.csv';
+                  a.click();
+                }}
+              >
+                ↓ Download Template (CSV)
+              </Button>
+            </div>
+
+            {/* File Upload */}
+            <div
+              className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:border-green-400 hover:bg-green-50 transition-colors"
+              onClick={() => document.getElementById('excel-import-input')?.click()}
+            >
+              <FileSpreadsheet className="h-10 w-10 text-slate-400 mx-auto mb-2" />
+              {importFile ? (
+                <div>
+                  <p className="font-semibold text-green-700">{importFile.name}</p>
+                  <p className="text-xs text-slate-500">{(importFile.size / 1024).toFixed(1)} KB</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-slate-600 font-medium">Click to choose Excel file</p>
+                  <p className="text-xs text-slate-400 mt-1">.xlsx or .xls, max 10MB</p>
+                </div>
+              )}
+              <input
+                id="excel-import-input"
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={(e) => { setImportFile(e.target.files?.[0] || null); setImportResult(null); }}
+              />
+            </div>
+
+            {/* Import Results */}
+            {importResult && (
+              <div className={`rounded-lg p-4 text-sm ${importResult.failed === 0 ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
+                <p className="font-semibold text-green-700">✅ {importResult.success} candidate(s) processed successfully</p>
+                {importResult.failed > 0 && (
+                  <div className="mt-2">
+                    <p className="font-semibold text-red-600">❌ {importResult.failed} rows failed</p>
+                    <ul className="mt-1 max-h-32 overflow-y-auto text-xs text-red-600 space-y-1">
+                      {importResult.errors.map((err, i) => <li key={i}>• {err}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsImportDialogOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              disabled={!importFile || isImporting}
+              onClick={handleImportExcel}
+            >
+              {isImporting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Importing...</> : <><FileSpreadsheet className="mr-2 h-4 w-4"/> Import Now</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* View Dialog Logic */}
       {viewingCandidate && (
         <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>

@@ -8,24 +8,25 @@ const candidateSchema = mongoose.Schema({
   email: { type: String, required: true },
   contact: { type: String, required: true },
   dateOfBirth: { type: Date },
-  gender: { type: String },
+  gender: { type: String, required: true }, // Required
   linkedin: { type: String },
   
   // --- Professional Info ---
-  position: { type: String, required: true },
+  position: { type: String, required: false }, // Not Required
   skills: { type: [String], required: true }, 
-  client: { type: String, required: true },
+  client: { type: String, required: false },   // Not Required
   currentCompany: { type: String },
-  currentLocation: { type: String },
+  currentLocation: { type: String, required: true }, // Required
   preferredLocation: { type: String },
   industry: { type: String },
   
   // --- Education ---
-  education: { type: String },
+  education: { type: String, required: true }, // Required (Qualification)
   
   // --- Status & Recruitment ---
   status: { 
-    type: [String], // ✅ This Array type supports Multi-Select and "Select All"
+    type: [String],
+    required: true, // Required
     enum: [
       'Submitted',
       'Shared Profiles',
@@ -41,26 +42,26 @@ const candidateSchema = mongoose.Schema({
     ],
     default: ['Submitted']
   },
-  source: { type: String, default: 'Portal' },
+  source: { type: String, required: true, default: 'Portal' }, // Required
   rating: { type: Number, default: 0 },
   
   // --- Experience & Pay ---
   totalExperience: { type: String },
   relevantExperience: { type: String },
-  ctc: { type: String },
-  ectc: { type: String },
+  ctc: { type: String }, // Not Required
+  ectc: { type: String }, // Not Required
   
-  // ✅ Renamed field to match Frontend
-  currentTakeHome: { type: String }, 
-  expectedTakeHome: { type: String }, 
+  currentTakeHome: { type: String, required: true }, // Required
+  expectedTakeHome: { type: String, required: true }, // Required
 
   // --- Offers ---
   offersInHand: { type: Boolean, default: false },
   offerPackage: { type: String }, 
 
-  // --- Notice Period ---
+  // --- Notice Period Logic ---
   noticePeriod: { type: String }, 
-  servingNoticePeriod: { type: Boolean, default: false }, 
+  servingNoticePeriod: { type: Boolean, required: true, default: false }, // Required
+  isNegotiable: { type: String, default: 'No' }, // Added for conditional logic
   noticePeriodDays: { type: String }, 
   
   // --- Relationships ---
@@ -76,7 +77,7 @@ const candidateSchema = mongoose.Schema({
   // --- System ---
   active: { type: Boolean, default: true },
   tags: { type: [String] },
-  dateAdded: { type: Date, default: Date.now },
+  dateAdded: { type: Date, required: true, default: Date.now }, // Required
   
   // --- Files ---
   resumeUrl: { type: String },
@@ -88,16 +89,16 @@ const candidateSchema = mongoose.Schema({
 // Auto-generate Candidate ID
 candidateSchema.pre('save', async function (next) {
   if (!this.isNew) return next();
-  
+  if (this.candidateId) return next();
+
   try {
-    const lastCandidate = await mongoose.model('Candidate')
-      .findOne({}, { candidateId: 1 })
-      .sort({ createdAt: -1 });
+    const last = await mongoose.model('Candidate')
+      .findOne({ candidateId: { $regex: /^CAND-\d+$/ } }, { candidateId: 1 })
+      .sort({ candidateId: -1 });
 
     let nextNumber = 1;
-
-    if (lastCandidate && lastCandidate.candidateId) {
-      const parts = lastCandidate.candidateId.split('-');
+    if (last && last.candidateId) {
+      const parts = last.candidateId.split('-');
       if (parts.length === 2) {
         const lastNumber = parseInt(parts[1], 10);
         if (!isNaN(lastNumber)) {
@@ -105,7 +106,6 @@ candidateSchema.pre('save', async function (next) {
         }
       }
     }
-
     this.candidateId = `CAND-${nextNumber.toString().padStart(4, '0')}`;
     next();
   } catch (error) {
