@@ -1,25 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { Send, Inbox, Clock, Reply, Loader2 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
 import io from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const SOCKET_URL = 'http://localhost:5000';
 
-let socket: any;
+let socket;
 
 export default function RecruiterMessages() {
   const { user } = useAuth();
-  const { toast } = useToast();
+  const toast = ({ title, description }) => alert(`${title}: ${description}`);
 
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [subject, setSubject] = useState('');
   const [content, setContent] = useState('');
@@ -38,7 +34,7 @@ export default function RecruiterMessages() {
     // Join room with my specific User ID
     socket.emit('join_room', user.id);
 
-    socket.on('receive_message', (newMessage: any) => {
+    socket.on('receive_message', (newMessage) => {
       setMessages((prev) => [newMessage, ...prev]);
       toast({ title: "New Message from Admin", description: newMessage.subject });
     });
@@ -68,7 +64,7 @@ export default function RecruiterMessages() {
     }
 
     const newMessage = {
-      from: user?.id, // Send as ID
+      from: user?.id, // Send
       to: 'admin',
       subject,
       content,
@@ -110,17 +106,17 @@ export default function RecruiterMessages() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* INBOX */}
-            <Card className="lg:col-span-2">
-              <CardHeader><CardTitle className="flex items-center gap-2"><Inbox className="w-5 h-5"/> Inbox</CardTitle></CardHeader>
-              <CardContent className="space-y-4 max-h-[600px] overflow-y-auto">
+            <div className="rounded-lg border bg-white shadow-sm" className="lg:col-span-2">
+              <div className="rounded-lg border bg-white shadow-sm"Header><div className="rounded-lg border bg-white shadow-sm"Title className="flex items-center gap-2"><Inbox className="w-5 h-5"/> Inbox</h3></div>
+              <div className="rounded-lg border bg-white shadow-sm"Content className="space-y-4 max-h-[600px] overflow-y-auto">
                 {myInbox.length === 0 ? (
                    <div className="text-center py-10 text-gray-500">No messages yet.</div>
                 ) : (
                   myInbox.map((msg, i) => (
-                    <Card key={i} className="hover:shadow-md transition-all">
-                      <CardContent className="pt-4">
+                    <div className="rounded-lg border bg-white shadow-sm" key={i} className="hover:shadow-md transition-all">
+                      <div className="rounded-lg border bg-white shadow-sm"Content className="pt-4">
                         <div className="flex justify-between mb-2">
-                           <Badge className="bg-blue-600">Admin</Badge>
+                           <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold" className="bg-blue-600">Admin</span>
                            <span className="text-xs text-muted-foreground flex items-center gap-1">
                              <Clock className="w-3 h-3"/> {new Date(msg.createdAt).toLocaleDateString()}
                            </span>
@@ -132,30 +128,30 @@ export default function RecruiterMessages() {
                             <Reply className="w-3 h-3 mr-1"/> Reply
                           </Button>
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
                   ))
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
             {/* REPLY FORM */}
-            <Card>
-              <CardHeader><CardTitle>Reply to Admin</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
+            <div className="rounded-lg border bg-white shadow-sm">
+              <div className="rounded-lg border bg-white shadow-sm"Header><div className="rounded-lg border bg-white shadow-sm"Title>Reply to Admin</h3></div>
+              <div className="rounded-lg border bg-white shadow-sm"Content className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Subject</label>
                   <Input value={subject} onChange={e => setSubject(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Message</label>
-                  <Textarea value={content} onChange={e => setContent(e.target.value)} className="min-h-[150px]" />
+                  <textarea value={content} onChange={e => setContent(e.target.value)} className="min-h-[150px]" />
                 </div>
                 <Button className="w-full" onClick={handleSendMessage} disabled={!content}>
                   <Send className="w-4 h-4 mr-2"/> Send Reply
                 </Button>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </div>
         </div>
       </div>

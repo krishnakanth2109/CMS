@@ -34,9 +34,18 @@ type ViewMode = "grid" | "list";
 type SortField = "name" | "email" | "recruiterId" | "role" | "submissions" | "interviews" | "offers" | "joined" | "status";
 type SortOrder = "asc" | "desc";
 
-interface CandidateWithId extends Candidate {
+// Extended interface to handle internal ID matching
+interface CandidateWithId extends Partial<Candidate> {
   _id?: string;
-  recruiterId: string;
+  id?: string;
+  recruiterId: string; // Crucial for filtering
+  status: string;      // Crucial for stats
+  name: string;
+  email: string;
+  phone?: string;
+  contact?: string; // Handle inconsistent naming (phone vs contact)
+  position?: string;
+  currentRole?: string; // Handle inconsistent naming (position vs currentRole)
 }
 
 export default function AdminRecruiters() {
@@ -133,6 +142,7 @@ export default function AdminRecruiters() {
       const candidateData = await candidateRes.json();
 
       const mappedRecruiters = recruiterData.map((r: any) => ({ ...r, id: r._id }));
+      // Map candidates to ensure consistent ID usage
       const mappedCandidates = candidateData.map((c: any) => ({ ...c, id: c._id }));
 
       setRecruiters(mappedRecruiters);
@@ -326,6 +336,7 @@ export default function AdminRecruiters() {
 
   // --- Logic & Helpers ---
   const calculateRecruiterStats = (recruiterId: string) => {
+    // This requires the candidates to have a 'recruiterId' field matching the recruiter's ID
     const recruiterCandidates = candidates.filter(candidate => 
       candidate.recruiterId === recruiterId
     );
@@ -470,6 +481,7 @@ export default function AdminRecruiters() {
     setShowStatsModal(true);
   };
 
+  // This function prepares the modal state based on the clicked metric
   const handleStatCardClick = (recruiter: Recruiter, metric: string) => {
     setSelectedRecruiter(recruiter);
     setCandidatesModalTitle(`${metric} - ${recruiter.name}`);
@@ -477,11 +489,14 @@ export default function AdminRecruiters() {
     setShowCandidatesModal(true);
   };
 
+  // Logic to filter the candidates displayed in the modal
   const getFilteredCandidatesForModal = () => {
     if (!selectedRecruiter) return [];
+    
+    // 1. Filter by Recruiter ID
     let filtered = candidates.filter(c => c.recruiterId === selectedRecruiter.id);
 
-    // Simple heuristic based on title to filter specific statuses if clicked via stats
+    // 2. Filter by specific status (if clicked on stats card)
     if (candidateFilterType) {
         if (candidateFilterType.includes('interviews')) {
             filtered = filtered.filter(c => ['L1 Interview', 'L2 Interview', 'Interview'].includes(c.status));
@@ -489,7 +504,8 @@ export default function AdminRecruiters() {
             filtered = filtered.filter(c => c.status === 'Offer');
         } else if (candidateFilterType.includes('joined')) {
             filtered = filtered.filter(c => c.status === 'Joined');
-        }
+        } 
+        // Note: 'Submissions' typically means all, or you can filter where status != 'Pending'
     }
     return filtered;
   };
@@ -534,7 +550,7 @@ export default function AdminRecruiters() {
              <Card className="bg-orange-600 text-white cursor-pointer hover:bg-orange-700 transition" onClick={() => handleMainStatCardClick('roles')}>
                <CardContent className="p-4 flex justify-between items-center">
                  <div><p className="text-orange-100 text-sm">Roles</p><p className="text-2xl font-bold">{uniqueRoles}</p></div>
-                 <Briefcase className="h-8 w-8 opacity-80" />
+                 <IdCard className="h-8 w-8 opacity-80" />
                </CardContent>
              </Card>
           </div>
@@ -598,6 +614,7 @@ export default function AdminRecruiters() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => openEditModal(recruiter)}><Edit className="h-4 w-4 mr-2"/> Edit</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => { setSelectedRecruiter(recruiter); setShowPerformanceModal(true); }}><TrendingUp className="h-4 w-4 mr-2"/> Performance</DropdownMenuItem>
+                              {/* View Candidates Button */}
                               <DropdownMenuItem onClick={() => { 
                                 setSelectedRecruiter(recruiter); 
                                 setCandidatesModalTitle(`All Candidates - ${recruiter.name}`);
@@ -1016,10 +1033,10 @@ export default function AdminRecruiters() {
                             getFilteredCandidatesForModal().map((candidate, idx) => (
                               <tr key={idx} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
                                 <td className="p-3 font-medium">{candidate.name}</td>
-                                <td className="p-3">{candidate.position}</td>
+                                <td className="p-3">{candidate.position || candidate.currentRole || candidate.appliedJob}</td>
                                 <td className="p-3"><Badge variant="outline">{candidate.status}</Badge></td>
                                 <td className="p-3 text-gray-500">{candidate.email}</td>
-                                <td className="p-3 text-gray-500">{candidate.contact}</td>
+                                <td className="p-3 text-gray-500">{candidate.contact || candidate.phone}</td>
                               </tr>
                             ))
                         ) : (

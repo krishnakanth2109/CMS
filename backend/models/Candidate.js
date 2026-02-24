@@ -25,19 +25,18 @@ const candidateSchema = mongoose.Schema({
   
   // --- Status & Recruitment ---
   status: { 
-    type: [String],
+    type: [String], // ✅ This Array type supports Multi-Select and "Select All"
     enum: [
-      'Submitted',
-      'Shared Profiles',
-      'Yet to attend',
-      'Turnups',
-      'No Show',
-      'Selected',
-      'Joined',
-      'Rejected',
-      'Pipeline',
-      'Hold',
-      'Backout'
+      'Submitted',        // Default Initial Status
+      'Shared Profiles',  // New
+      'Yet to attend',    // New
+      'Turnups',          // New
+      'No Show',          // New
+      'Selected',         // New
+      'Joined',         // New
+      'Rejected',         // Existing
+      'Hold',             // New
+      'Backout'           // New
     ],
     default: ['Submitted']
   },
@@ -50,6 +49,7 @@ const candidateSchema = mongoose.Schema({
   ctc: { type: String },
   ectc: { type: String },
   
+  // ✅ Renamed field to match Frontend
   currentTakeHome: { type: String }, 
   expectedTakeHome: { type: String }, 
 
@@ -84,33 +84,19 @@ const candidateSchema = mongoose.Schema({
   timestamps: true,
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Auto-generate Candidate ID
-//
-// ★ KEY FIX: If candidateId is ALREADY set (e.g. by bulkImportController),
-//   skip generation entirely. This prevents the parallel-save race condition
-//   where all 10 rows read the same "last" candidate and get the same number.
-// ─────────────────────────────────────────────────────────────────────────────
 candidateSchema.pre('save', async function (next) {
-  // Not a new document — nothing to do
   if (!this.isNew) return next();
-
-  // candidateId already assigned externally (bulk import) — skip generation
-  if (this.candidateId) return next();
-
+  
   try {
-    // Find the highest CAND-XXXX number currently in DB
-    const last = await mongoose.model('Candidate')
-      .findOne(
-        { candidateId: { $regex: /^CAND-\d+$/ } },
-        { candidateId: 1 }
-      )
-      .sort({ candidateId: -1 });
+    const lastCandidate = await mongoose.model('Candidate')
+      .findOne({}, { candidateId: 1 })
+      .sort({ createdAt: -1 });
 
     let nextNumber = 1;
 
-    if (last && last.candidateId) {
-      const parts = last.candidateId.split('-');
+    if (lastCandidate && lastCandidate.candidateId) {
+      const parts = lastCandidate.candidateId.split('-');
       if (parts.length === 2) {
         const lastNumber = parseInt(parts[1], 10);
         if (!isNaN(lastNumber)) {
